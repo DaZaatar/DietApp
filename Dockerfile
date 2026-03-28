@@ -24,6 +24,8 @@ RUN chmod +x /app/entrypoint.sh
 COPY --from=frontend-build /src/frontend/dist ./static
 
 ENV PYTHONUNBUFFERED=1
+# So `alembic` and `uvicorn` resolve the `app` package (console scripts don't add /app to sys.path).
+ENV PYTHONPATH=/app
 ENV STATIC_ROOT=/app/static
 ENV PORT=8000
 
