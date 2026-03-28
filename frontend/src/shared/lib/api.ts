@@ -1,6 +1,5 @@
-const API_BASE =
-  import.meta.env.VITE_API_BASE_URL ??
-  (import.meta.env.DEV ? "/api/v1" : "http://localhost:8000/api/v1");
+/** Same-origin default (/api/v1) works with Vite dev proxy and with production Docker (API + static). */
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
 const DEFAULT_USER_ID = import.meta.env.VITE_DEFAULT_USER_ID ?? "";
 const USER_ID_STORAGE_KEY = "dietapp_user_id";
 

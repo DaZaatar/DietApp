@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -27,6 +28,25 @@ class Settings(BaseSettings):
     allow_dev_user_header: bool = True
     # When True and no JWT/header user, default to user id 1 (integration tests).
     allow_default_user: bool = True
+
+    # If set (e.g. /app/static), serve built SPA from this directory (Docker / Railway).
+    static_root: str = ""
+    # Set True on HTTPS (Railway) so auth cookies are marked Secure.
+    cookie_secure: bool = False
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def normalize_postgres_url(cls, v: object) -> object:
+        """Railway/Heroku use postgres://; SQLAlchemy 2 + psycopg3 expect postgresql+psycopg://."""
+        if not isinstance(v, str) or v.startswith("sqlite"):
+            return v
+        if v.startswith("postgresql+psycopg"):
+            return v
+        if v.startswith("postgres://"):
+            return "postgresql+psycopg://" + v[len("postgres://") :]
+        if v.startswith("postgresql://"):
+            return "postgresql+psycopg://" + v[len("postgresql://") :]
+        return v
 
     @property
     def cors_origin_list(self) -> list[str]:
