@@ -199,6 +199,47 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertEqual(user1_status, "planned")
         self.assertEqual(user2_status, "skipped")
 
+    def test_tracking_list_includes_day_id(self):
+        self.commit_sample_plan()
+        items = self.client.get("/api/v1/tracking/meals").json()
+        self.assertGreaterEqual(len(items), 1)
+        self.assertIn("day_id", items[0])
+
+    def test_swap_meals_exchanges_planned_content(self):
+        self.commit_sample_plan()
+        items = self.client.get("/api/v1/tracking/meals").json()
+        self.assertGreaterEqual(len(items), 2)
+        a = items[0]["meal_id"]
+        b = items[1]["meal_id"]
+        title_a = items[0]["title"]
+        title_b = items[1]["title"]
+        r = self.client.post("/api/v1/tracking/swap/meals", json={"meal_id_a": a, "meal_id_b": b})
+        self.assertEqual(r.status_code, 200)
+        after = self.client.get("/api/v1/tracking/meals").json()
+        ma = next(x for x in after if x["meal_id"] == a)
+        mb = next(x for x in after if x["meal_id"] == b)
+        self.assertEqual(ma["title"], title_b)
+        self.assertEqual(mb["title"], title_a)
+
+    def test_swap_days_rejects_mismatched_meal_counts(self):
+        self.commit_sample_plan()
+        items = self.client.get("/api/v1/tracking/meals").json()
+        by_day: dict[int, list] = {}
+        for i in items:
+            by_day.setdefault(i["day_id"], []).append(i)
+        by_count: dict[int, list[int]] = {}
+        for day_id, ms in by_day.items():
+            by_count.setdefault(len(ms), []).append(day_id)
+        two = by_count.get(2)
+        one = by_count.get(1)
+        if not two or not one:
+            self.skipTest("sample plan layout does not include both a 2-meal and 1-meal day")
+        r = self.client.post(
+            "/api/v1/tracking/swap/days",
+            json={"day_id_a": two[0], "day_id_b": one[0]},
+        )
+        self.assertEqual(r.status_code, 400)
+
     def test_shopping_list_endpoint(self):
         meal_plan_id = self.commit_sample_plan()
 

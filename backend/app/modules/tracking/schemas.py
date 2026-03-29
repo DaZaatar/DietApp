@@ -41,8 +41,19 @@ class TrackingIngredientItem(BaseModel):
     category: str
 
 
+class SwapMealsRequest(BaseModel):
+    meal_id_a: int
+    meal_id_b: int
+
+
+class SwapDaysRequest(BaseModel):
+    day_id_a: int
+    day_id_b: int
+
+
 class TrackingMealItemResponse(BaseModel):
     meal_id: int
+    day_id: int
     meal_plan_id: int
     week_index: int
     day_name: str

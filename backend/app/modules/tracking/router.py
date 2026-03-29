@@ -5,6 +5,8 @@ from app.api.deps import get_current_user_id
 from app.db.session import get_db
 from app.modules.tracking.schemas import (
     AttachmentResponse,
+    SwapDaysRequest,
+    SwapMealsRequest,
     TrackingMealItemResponse,
     TrackingEntryResponse,
     TrackingEntryUpdate,
@@ -45,3 +47,23 @@ async def attach_meal_image(
 ):
     attachment = await service.attach_image(db, user_id=user_id, meal_id=meal_id, file=file, note=note)
     return attachment
+
+
+@router.post("/swap/meals")
+def swap_meals(
+    payload: SwapMealsRequest,
+    _user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    service.swap_meal_plans_between_meals(db, payload.meal_id_a, payload.meal_id_b)
+    return {"ok": True}
+
+
+@router.post("/swap/days")
+def swap_days(
+    payload: SwapDaysRequest,
+    _user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    service.swap_days_in_plan(db, payload.day_id_a, payload.day_id_b)
+    return {"ok": True}

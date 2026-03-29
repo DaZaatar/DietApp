@@ -10,6 +10,33 @@ function safeNext(raw: string | null): string {
   return raw;
 }
 
+function EyeIcon() {
+  return (
+    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={1.5}
+        d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"
+      />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+  );
+}
+
+function EyeSlashIcon() {
+  return (
+    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={1.5}
+        d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 15.338 7.244 18 12 18c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 2.662 10.065 6.006a1.125 1.125 0 01-.372 1.287l-1.293 1.293M6.228 6.228 3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"
+      />
+    </svg>
+  );
+}
+
 export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -22,6 +49,7 @@ export function LoginPage() {
   const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     const fromRegister = (location.state as { email?: string } | undefined)?.email;
@@ -60,7 +88,7 @@ export function LoginPage() {
   }
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-md flex-col justify-center bg-slate-50 px-4 py-12 dark:bg-slate-950">
+    <div className="mx-auto w-full max-w-md">
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900">
         <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Sign in</h1>
         <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
@@ -85,15 +113,29 @@ export function LoginPage() {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">Password</label>
-            <input
-              className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100"
-              type="password"
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
+            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300" htmlFor="login-password">
+              Password
+            </label>
+            <div className="relative mt-1">
+              <input
+                id="login-password"
+                className="w-full rounded-md border border-slate-300 bg-white py-2 pl-3 pr-10 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100"
+                type={showPassword ? "text" : "password"}
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+              <button
+                type="button"
+                className="absolute inset-y-0 right-0 flex items-center justify-center rounded-r-md px-2.5 text-slate-500 outline-none ring-slate-400 ring-offset-2 hover:text-slate-800 focus-visible:ring-2 dark:text-slate-400 dark:hover:text-slate-200 dark:ring-offset-slate-900"
+                onClick={() => setShowPassword((v) => !v)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                aria-pressed={showPassword}
+              >
+                {showPassword ? <EyeSlashIcon /> : <EyeIcon />}
+              </button>
+            </div>
           </div>
           <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
             <input
@@ -125,7 +167,7 @@ export function LoginPage() {
         </p>
         <p className="mt-4 text-center">
           <Link className="text-sm text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200" to="/">
-            Back to app
+            Back to meal tracker
           </Link>
         </p>
       </div>

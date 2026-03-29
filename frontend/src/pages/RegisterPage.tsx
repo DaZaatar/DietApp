@@ -1,7 +1,7 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
-import { registerRequest } from "../shared/lib/api";
+import { fetchSession, registerRequest } from "../shared/lib/api";
 
 function safeNext(raw: string | null): string {
   if (!raw || !raw.startsWith("/") || raw.startsWith("//")) {
@@ -19,6 +19,19 @@ export function RegisterPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const session = await fetchSession();
+      if (!cancelled && session) {
+        navigate(next, { replace: true });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [navigate, next]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -38,7 +51,7 @@ export function RegisterPage() {
   }
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-md flex-col justify-center bg-slate-50 px-4 py-12 dark:bg-slate-950">
+    <div className="mx-auto w-full max-w-md">
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900">
         <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Create account</h1>
         <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">Password must be at least 8 characters.</p>
@@ -88,7 +101,7 @@ export function RegisterPage() {
         </p>
         <p className="mt-4 text-center">
           <Link className="text-sm text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200" to="/">
-            Back to app
+            Back to meal tracker
           </Link>
         </p>
       </div>

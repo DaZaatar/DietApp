@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { getJson, patchJson, postForm } from "../../shared/lib/api";
+import { getJson, patchJson, postForm, postJson } from "../../shared/lib/api";
 
 type Status = "planned" | "eaten" | "skipped";
 
@@ -13,6 +13,7 @@ type IngredientRow = {
 
 type Item = {
   mealId: number;
+  dayId: number;
   weekIndex: number;
   dayName: string;
   dayIndex: number;
@@ -26,12 +27,17 @@ type Item = {
 
 type DayGroup = {
   key: string;
+  dayId: number;
   weekIndex: number;
   dayName: string;
   dayIndex: number;
   planStartsOn: string | null;
   meals: Item[];
 };
+
+function mealOptionLabel(item: Item): string {
+  return `W${item.weekIndex} ${item.dayName} · ${item.mealType}: ${item.title}`;
+}
 
 function sortForDisplay(items: Item[]): Item[] {
   return [...items]
@@ -63,6 +69,7 @@ function buildDayGroups(items: Item[]): DayGroup[] {
     const first = meals[0];
     return {
       key,
+      dayId: first.dayId,
       weekIndex: first.weekIndex,
       dayName: first.dayName,
       dayIndex: first.dayIndex,
@@ -100,65 +107,124 @@ function statusAccentClass(status: Status): string {
   return "bg-slate-100 text-slate-700 ring-1 ring-slate-200 dark:bg-slate-700 dark:text-slate-200 dark:ring-slate-600";
 }
 
+type SwapModal =
+  | null
+  | { kind: "meal"; source: Item }
+  | { kind: "day"; group: DayGroup; label: string };
+
 export function TrackerChecklist() {
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(false);
   const [busyMealId, setBusyMealId] = useState<number | null>(null);
+  const [swapBusy, setSwapBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [swapModal, setSwapModal] = useState<SwapModal>(null);
+  const [swapTargetId, setSwapTargetId] = useState("");
 
   const dayGroups = useMemo(() => buildDayGroups(items), [items]);
 
-  useEffect(() => {
-    let active = true;
-    async function loadMeals() {
-      setLoading(true);
-      setError(null);
-      try {
-        const data = await getJson<
-          Array<{
-            meal_id: number;
-            week_index: number;
-            day_name: string;
-            day_index: number;
-            plan_starts_on: string | null;
-            meal_type: string;
-            title: string;
-            status: Status;
-            notes: string | null;
-            ingredients: IngredientRow[];
-          }>
-        >("/tracking/meals");
-        if (!active) return;
-        setItems(
-          data.map((item) => ({
-            mealId: item.meal_id,
-            weekIndex: item.week_index,
-            dayName: item.day_name,
-            dayIndex: item.day_index ?? 0,
-            planStartsOn: item.plan_starts_on ?? null,
-            mealType: item.meal_type,
-            title: item.title,
-            status: item.status,
-            notes: item.notes,
-            ingredients: item.ingredients ?? [],
-          })),
-        );
-      } catch (err) {
-        if (!active) return;
-        setError(err instanceof Error ? err.message : "Failed to load meals");
-      } finally {
-        if (active) {
-          setLoading(false);
-        }
-      }
+  const loadMeals = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getJson<
+        Array<{
+          meal_id: number;
+          day_id: number;
+          week_index: number;
+          day_name: string;
+          day_index: number;
+          plan_starts_on: string | null;
+          meal_type: string;
+          title: string;
+          status: Status;
+          notes: string | null;
+          ingredients: IngredientRow[];
+        }>
+      >("/tracking/meals");
+      setItems(
+        data.map((item) => ({
+          mealId: item.meal_id,
+          dayId: item.day_id,
+          weekIndex: item.week_index,
+          dayName: item.day_name,
+          dayIndex: item.day_index ?? 0,
+          planStartsOn: item.plan_starts_on ?? null,
+          mealType: item.meal_type,
+          title: item.title,
+          status: item.status,
+          notes: item.notes,
+          ingredients: item.ingredients ?? [],
+        })),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load meals");
+    } finally {
+      setLoading(false);
     }
-
-    loadMeals();
-    return () => {
-      active = false;
-    };
   }, []);
+
+  useEffect(() => {
+    void loadMeals();
+  }, [loadMeals]);
+
+  function openMealSwap(source: Item) {
+    const others = items.filter((i) => i.mealId !== source.mealId);
+    if (others.length === 0) {
+      setError("No other meals in this plan to swap with.");
+      return;
+    }
+    setError(null);
+    setSwapModal({ kind: "meal", source });
+    setSwapTargetId(String(others[0]!.mealId));
+  }
+
+  function openDaySwap(group: DayGroup) {
+    const others = dayGroups.filter((g) => g.dayId !== group.dayId);
+    if (others.length === 0) {
+      setError("No other days in this plan to swap with.");
+      return;
+    }
+    const dateLine = calendarLabel(group.planStartsOn, group.dayIndex);
+    const label = dateLine
+      ? `Week ${group.weekIndex} · ${group.dayName} (${dateLine})`
+      : `Week ${group.weekIndex} · ${group.dayName}`;
+    setError(null);
+    setSwapModal({ kind: "day", group, label });
+    setSwapTargetId(String(others[0]!.dayId));
+  }
+
+  async function confirmSwap() {
+    if (!swapModal) return;
+    setSwapBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      if (swapModal.kind === "meal") {
+        const b = Number(swapTargetId);
+        if (!Number.isFinite(b)) throw new Error("Pick a meal to swap with.");
+        await postJson("/tracking/swap/meals", {
+          meal_id_a: swapModal.source.mealId,
+          meal_id_b: b,
+        });
+      } else {
+        const b = Number(swapTargetId);
+        if (!Number.isFinite(b)) throw new Error("Pick a day to swap with.");
+        await postJson("/tracking/swap/days", {
+          day_id_a: swapModal.group.dayId,
+          day_id_b: b,
+        });
+      }
+      setSwapModal(null);
+      setMessage(swapModal.kind === "meal" ? "Meals swapped." : "Days swapped.");
+      await loadMeals();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Swap failed");
+    } finally {
+      setSwapBusy(false);
+    }
+  }
 
   async function setStatus(mealId: number, status: Status) {
     setBusyMealId(mealId);
@@ -191,6 +257,11 @@ export function TrackerChecklist() {
     }
   }
 
+  const mealSwapChoices =
+    swapModal?.kind === "meal" ? items.filter((i) => i.mealId !== swapModal.source.mealId) : [];
+  const daySwapChoices =
+    swapModal?.kind === "day" ? dayGroups.filter((g) => g.dayId !== swapModal.group.dayId) : [];
+
   return (
     <section className="space-y-4">
       <p className="text-sm text-slate-600 dark:text-slate-400">Quick meal checklist optimized for phone interaction.</p>
@@ -208,16 +279,32 @@ export function TrackerChecklist() {
       <ul className="space-y-4">
         {dayGroups.map((group) => {
           const dateLine = calendarLabel(group.planStartsOn, group.dayIndex);
+          const canDaySwap = dayGroups.length > 1;
           return (
             <li
               key={group.key}
               className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50/80 dark:border-slate-700 dark:bg-slate-900/50"
             >
-              <div className="border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-900">
-                <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                  Week {group.weekIndex} · {group.dayName}
-                </p>
-                {dateLine && <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-400">{dateLine}</p>}
+              <div className="flex flex-col gap-2 border-b border-slate-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-slate-700 dark:bg-slate-900">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                    Week {group.weekIndex} · {group.dayName}
+                  </p>
+                  {dateLine && <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-400">{dateLine}</p>}
+                </div>
+                <button
+                  type="button"
+                  className="shrink-0 rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:text-slate-200"
+                  disabled={!canDaySwap || swapBusy}
+                  title={
+                    canDaySwap
+                      ? "Swap this day’s meals with another day (same number of meals per day)"
+                      : "Need at least two days in the plan"
+                  }
+                  onClick={() => openDaySwap(group)}
+                >
+                  Swap day
+                </button>
               </div>
               <ul className="space-y-3 p-3">
                 {group.meals.map((item) => (
@@ -271,35 +358,47 @@ export function TrackerChecklist() {
                       <button
                         className="rounded-md border border-slate-300 px-2 py-2 text-xs dark:border-slate-600 dark:text-slate-200"
                         onClick={() => setStatus(item.mealId, "planned")}
-                        disabled={busyMealId === item.mealId}
+                        disabled={busyMealId === item.mealId || swapBusy}
                       >
                         Planned
                       </button>
                       <button
                         className="rounded-md border border-emerald-300 bg-emerald-50 px-2 py-2 text-xs text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-200"
                         onClick={() => setStatus(item.mealId, "eaten")}
-                        disabled={busyMealId === item.mealId}
+                        disabled={busyMealId === item.mealId || swapBusy}
                       >
                         Eaten
                       </button>
                       <button
                         className="rounded-md border border-amber-300 bg-amber-50 px-2 py-2 text-xs text-amber-700 dark:border-amber-700 dark:bg-amber-950/50 dark:text-amber-200"
                         onClick={() => setStatus(item.mealId, "skipped")}
-                        disabled={busyMealId === item.mealId}
+                        disabled={busyMealId === item.mealId || swapBusy}
                       >
                         Skipped
                       </button>
                     </div>
-                    <label className="mt-3 block text-xs text-slate-600 dark:text-slate-400">
-                      Attach meal image
-                      <input
-                        className="mt-1 block w-full text-xs text-slate-800 file:mr-2 file:rounded file:border-0 file:bg-slate-200 file:px-2 file:py-1 dark:text-slate-200 dark:file:bg-slate-700"
-                        type="file"
-                        accept="image/*"
-                        capture="environment"
-                        onChange={(e) => attachImage(item.mealId, e.target.files?.[0] ?? null)}
-                      />
-                    </label>
+                    <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <label className="block text-xs text-slate-600 dark:text-slate-400 sm:flex-1">
+                        Attach meal image
+                        <input
+                          className="mt-1 block w-full text-xs text-slate-800 file:mr-2 file:rounded file:border-0 file:bg-slate-200 file:px-2 file:py-1 dark:text-slate-200 dark:file:bg-slate-700"
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          disabled={swapBusy}
+                          onChange={(e) => attachImage(item.mealId, e.target.files?.[0] ?? null)}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        className="shrink-0 rounded-md border border-slate-300 px-3 py-2 text-xs font-medium text-slate-800 dark:border-slate-600 dark:text-slate-200"
+                        disabled={items.length < 2 || swapBusy}
+                        title={items.length < 2 ? "Need at least two meals in the plan" : "Swap planned meal with another slot"}
+                        onClick={() => openMealSwap(item)}
+                      >
+                        Swap meal
+                      </button>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -311,6 +410,81 @@ export function TrackerChecklist() {
         <p className="rounded-lg bg-slate-100 p-3 text-sm text-slate-700 dark:bg-slate-800 dark:text-slate-300">
           No meals found for tracking.
         </p>
+      )}
+
+      {swapModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="swap-dialog-title"
+          onClick={() => !swapBusy && setSwapModal(null)}
+        >
+          <div
+            className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-slate-200 bg-white p-4 shadow-xl dark:border-slate-600 dark:bg-slate-900"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="swap-dialog-title" className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+              {swapModal.kind === "meal" ? "Swap with which meal?" : "Swap with which day?"}
+            </h3>
+            {swapModal.kind === "meal" ? (
+              <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                Your slot: <span className="font-medium text-slate-800 dark:text-slate-200">{mealOptionLabel(swapModal.source)}</span>
+              </p>
+            ) : (
+              <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                Your day: <span className="font-medium text-slate-800 dark:text-slate-200">{swapModal.label}</span>
+              </p>
+            )}
+            <label className="mt-4 block text-xs font-medium text-slate-700 dark:text-slate-300">
+              {swapModal.kind === "meal" ? "Swap with" : "Swap with"}
+              <select
+                className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100"
+                value={swapTargetId}
+                onChange={(e) => setSwapTargetId(e.target.value)}
+              >
+                {swapModal.kind === "meal"
+                  ? mealSwapChoices.map((i) => (
+                      <option key={i.mealId} value={String(i.mealId)}>
+                        {mealOptionLabel(i)}
+                      </option>
+                    ))
+                  : daySwapChoices.map((g) => {
+                      const dl = calendarLabel(g.planStartsOn, g.dayIndex);
+                      const lab = dl ? `Week ${g.weekIndex} · ${g.dayName} (${dl})` : `Week ${g.weekIndex} · ${g.dayName}`;
+                      return (
+                        <option key={g.dayId} value={String(g.dayId)}>
+                          {lab} · {g.meals.length} meal{g.meals.length === 1 ? "" : "s"}
+                        </option>
+                      );
+                    })}
+              </select>
+            </label>
+            {swapModal.kind === "day" && (
+              <p className="mt-2 text-xs text-slate-500 dark:text-slate-500">
+                Both days must have the same number of meals; meals are paired in stable order to swap plans.
+              </p>
+            )}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-800 dark:border-slate-600 dark:text-slate-200"
+                onClick={() => setSwapModal(null)}
+                disabled={swapBusy}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white dark:bg-brand-600"
+                onClick={() => void confirmSwap()}
+                disabled={swapBusy}
+              >
+                {swapBusy ? "Swapping…" : "Confirm swap"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </section>
   );

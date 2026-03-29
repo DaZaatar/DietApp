@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
 from fastapi import HTTPException, UploadFile
-from sqlalchemy import and_, select
+from sqlalchemy import and_, select, update as sa_update
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -38,6 +38,7 @@ class TrackingService:
         stmt = (
             select(
                 Meal.id.label("meal_id"),
+                Day.id.label("day_id"),
                 Week.meal_plan_id.label("meal_plan_id"),
                 Week.week_index.label("week_index"),
                 Day.day_name.label("day_name"),
@@ -82,6 +83,7 @@ class TrackingService:
         return [
             {
                 "meal_id": row.meal_id,
+                "day_id": row.day_id,
                 "meal_plan_id": row.meal_plan_id,
                 "week_index": row.week_index,
                 "day_name": row.day_name,
@@ -96,6 +98,76 @@ class TrackingService:
             }
             for row in rows
         ]
+
+    def swap_meal_plans_between_meals(self, db: Session, meal_id_a: int, meal_id_b: int) -> None:
+        if meal_id_a == meal_id_b:
+            raise HTTPException(status_code=400, detail="Cannot swap a meal with itself")
+        meal_a = db.get(Meal, meal_id_a)
+        meal_b = db.get(Meal, meal_id_b)
+        if not meal_a or not meal_b:
+            raise HTTPException(status_code=404, detail="Meal not found")
+
+        day_a = db.get(Day, meal_a.day_id)
+        day_b = db.get(Day, meal_b.day_id)
+        if not day_a or not day_b:
+            raise HTTPException(status_code=404, detail="Day not found")
+        week_a = db.get(Week, day_a.week_id)
+        week_b = db.get(Week, day_b.week_id)
+        if not week_a or not week_b:
+            raise HTTPException(status_code=404, detail="Week not found")
+        if week_a.meal_plan_id != week_b.meal_plan_id:
+            raise HTTPException(status_code=400, detail="Meals must belong to the same meal plan")
+
+        temp = Meal(day_id=meal_a.day_id, meal_type="__swap__", title="__swap__")
+        db.add(temp)
+        db.flush()
+
+        db.execute(
+            sa_update(MealIngredient)
+            .where(MealIngredient.meal_id == meal_a.id)
+            .values(meal_id=temp.id)
+        )
+        db.execute(
+            sa_update(MealIngredient)
+            .where(MealIngredient.meal_id == meal_b.id)
+            .values(meal_id=meal_a.id)
+        )
+        db.execute(
+            sa_update(MealIngredient)
+            .where(MealIngredient.meal_id == temp.id)
+            .values(meal_id=meal_b.id)
+        )
+
+        t_type, t_title = meal_a.meal_type, meal_a.title
+        meal_a.meal_type, meal_a.title = meal_b.meal_type, meal_b.title
+        meal_b.meal_type, meal_b.title = t_type, t_title
+
+        db.delete(temp)
+        db.commit()
+
+    def swap_days_in_plan(self, db: Session, day_id_a: int, day_id_b: int) -> None:
+        if day_id_a == day_id_b:
+            raise HTTPException(status_code=400, detail="Cannot swap a day with itself")
+        day_a = db.get(Day, day_id_a)
+        day_b = db.get(Day, day_id_b)
+        if not day_a or not day_b:
+            raise HTTPException(status_code=404, detail="Day not found")
+        week_a = db.get(Week, day_a.week_id)
+        week_b = db.get(Week, day_b.week_id)
+        if not week_a or not week_b:
+            raise HTTPException(status_code=404, detail="Week not found")
+        if week_a.meal_plan_id != week_b.meal_plan_id:
+            raise HTTPException(status_code=400, detail="Days must belong to the same meal plan")
+
+        meals_a = db.scalars(select(Meal).where(Meal.day_id == day_id_a).order_by(Meal.id)).all()
+        meals_b = db.scalars(select(Meal).where(Meal.day_id == day_id_b).order_by(Meal.id)).all()
+        if len(meals_a) != len(meals_b):
+            raise HTTPException(
+                status_code=400,
+                detail="Both days must have the same number of meals to swap whole days",
+            )
+        for ma, mb in zip(meals_a, meals_b):
+            self.swap_meal_plans_between_meals(db, ma.id, mb.id)
 
     async def attach_image(
         self,
