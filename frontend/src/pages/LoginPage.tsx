@@ -60,21 +60,23 @@ export function LoginPage() {
   }
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-4 py-12">
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h1 className="text-xl font-semibold text-slate-900">Sign in</h1>
-        <p className="mt-1 text-sm text-slate-600">
+    <div className="mx-auto flex min-h-screen max-w-md flex-col justify-center bg-slate-50 px-4 py-12 dark:bg-slate-950">
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+        <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Sign in</h1>
+        <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
           Use your DietApp account. You will return to{" "}
-          <span className="font-medium text-slate-800">{next}</span> after signing in.
+          <span className="font-medium text-slate-800 dark:text-slate-200">{next}</span> after signing in.
         </p>
         {registered && (
-          <p className="mt-3 rounded-lg bg-emerald-50 p-2 text-sm text-emerald-800">Account created. Sign in below.</p>
+          <p className="mt-3 rounded-lg bg-emerald-50 p-2 text-sm text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200">
+            Account created. Sign in below.
+          </p>
         )}
         <form className="mt-6 space-y-4" onSubmit={onSubmit}>
           <div>
-            <label className="block text-xs font-medium text-slate-700">Email</label>
+            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">Email</label>
             <input
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900"
+              className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100"
               type="email"
               autoComplete="email"
               required
@@ -83,9 +85,9 @@ export function LoginPage() {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-700">Password</label>
+            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">Password</label>
             <input
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900"
+              className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100"
               type="password"
               autoComplete="current-password"
               required
@@ -93,7 +95,7 @@ export function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
             />
           </div>
-          <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
             <input
               type="checkbox"
               checked={rememberMe}
@@ -101,26 +103,28 @@ export function LoginPage() {
             />
             Remember me on this device (keeps you signed in via a secure cookie)
           </label>
-          {error && <p className="rounded-lg bg-rose-50 p-2 text-sm text-rose-800">{error}</p>}
+          {error && (
+            <p className="rounded-lg bg-rose-50 p-2 text-sm text-rose-800 dark:bg-rose-950/50 dark:text-rose-200">{error}</p>
+          )}
           <button
             type="submit"
             disabled={busy}
-            className="w-full rounded-lg bg-slate-900 py-2.5 text-sm font-medium text-white disabled:opacity-50"
+            className="w-full rounded-lg bg-slate-900 py-2.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-brand-600 dark:hover:bg-brand-700"
           >
             {busy ? "Signing in…" : "Sign in"}
           </button>
         </form>
-        <p className="mt-4 text-center text-sm text-slate-600">
+        <p className="mt-4 text-center text-sm text-slate-600 dark:text-slate-400">
           No account?{" "}
           <Link
-            className="font-medium text-brand-700 hover:underline"
+            className="font-medium text-brand-700 hover:underline dark:text-brand-400"
             to={`/register?next=${encodeURIComponent(next)}`}
           >
             Register
           </Link>
         </p>
         <p className="mt-4 text-center">
-          <Link className="text-sm text-slate-500 hover:text-slate-800" to="/">
+          <Link className="text-sm text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200" to="/">
             Back to app
           </Link>
         </p>

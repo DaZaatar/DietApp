@@ -1,20 +1,21 @@
 # Current Tasks
 
 ## Recently Completed
-- Added ingredient-level import contract (`name`, `quantity`, `unit`, `category`) in OpenRouter parsing schema.
-- Persisted `meal_ingredients` and `shopping_checklist_entries` in DB with Alembic migrations.
-- Implemented user-scoped shopping checklist persistence endpoint (`PATCH /shopping/items/{item_key}`).
-- Switched shopping list API to meal-plan-scoped aggregated totals by ingredient+unit, ordered by category.
-- Updated shopping UI to expandable animated card with checklist rows grouped by category.
-- Added and maintained integration coverage for import/tracking/shopping behaviors.
+- OpenRouter prompt categories (meats, dairy, bread, grains, etc.) + Arabicizi guidance; import persistence + category normalization module.
+- JWT + HttpOnly cookie auth, `/auth/me`, login/register pages, `next` redirect, remember-me via cookie max-age; Vite proxy + `/api/v1` default.
+- Shopping: list all meal plans, per-plan expandable cards, delete meal plan (DB + attachment files on disk).
+- Tracker: ingredients per meal, expandable UI, eaten/skipped ordering and styling.
+- Docker/Railway: root Dockerfile, `entrypoint.sh`, `PYTHONPATH`, `Settings` for `DATABASE_URL` + Railway errors, Postgres URL normalization.
+- Integration tests expanded (auth cookie, shopping order, meal plan delete, attachment file cleanup).
+- `.agent/skills` for start/stop dev servers and clear DB data.
 
 ## Remaining TODOs
-- Re-import real meal plan PDFs to populate category-quality data from parser output.
-- Add stricter validation/normalization for ingredient category values before persistence.
-- Add shopping API tests for category ordering edge cases and invalid category payload recovery.
-- Replace auth stub with real current-user context (remove header-only reliance in production).
+- Re-import real meal plan PDFs to validate parser categories and transliterations.
+- Stricter validation/normalization for ingredient `category` edge cases (optional extra tests).
+- Production: Railway volume or object storage for `uploads/` (ephemeral disk on Railway).
+- Optional: refresh tokens, stricter rate limits on auth endpoints.
 
 ## Follow-up Steps
-1. Validate parser output quality on 2-3 real PDFs and tune prompt examples for category accuracy.
-2. Add optional category filters in shopping UI (for faster in-store checklist workflows).
-3. Introduce canonical ingredient normalization mapping in Phase 2.
+1. Validate parser on 2–3 real PDFs; tune prompts if categories drift.
+2. Phase 2: canonical ingredient merge + pantry exclusions in shopping.
+3. Clear production DB: use `railway run` + `scripts/clear_db_data.py` or SQL (see agent skill / README).

@@ -69,6 +69,65 @@ function networkErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : "Request failed";
 }
 
+function formatDetail(detail: unknown): string {
+  if (typeof detail === "string") {
+    return detail;
+  }
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        if (item && typeof item === "object" && "msg" in item) {
+          const loc = "loc" in item && Array.isArray((item as { loc: unknown }).loc)
+            ? `${(item as { loc: string[] }).loc.filter((x) => x !== "body").join(".")}: `
+            : "";
+          return `${loc}${String((item as { msg: unknown }).msg)}`;
+        }
+        try {
+          return JSON.stringify(item);
+        } catch {
+          return String(item);
+        }
+      })
+      .join("; ");
+  }
+  if (detail && typeof detail === "object") {
+    try {
+      return JSON.stringify(detail);
+    } catch {
+      return "Request failed";
+    }
+  }
+  if (detail == null) {
+    return "Something went wrong.";
+  }
+  return String(detail);
+}
+
+/** Turns FastAPI / proxy error bodies into a single readable line for UI copy. */
+export function parseApiErrorBody(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return "Something went wrong.";
+  }
+  try {
+    const parsed = JSON.parse(trimmed) as { detail?: unknown };
+    if (parsed && typeof parsed === "object" && "detail" in parsed) {
+      return formatDetail(parsed.detail);
+    }
+  } catch {
+    /* plain text or HTML */
+  }
+  if (trimmed.length > 280) {
+    return `${trimmed.slice(0, 280)}…`;
+  }
+  return trimmed;
+}
+
+async function errorMessageFromResponse(response: Response): Promise<string> {
+  const text = await response.text();
+  return parseApiErrorBody(text);
+}
+
 const fetchDefaults: RequestInit = {
   credentials: "include",
 };
@@ -97,7 +156,7 @@ export async function postForm<T>(path: string, formData: FormData): Promise<T> 
       body: formData,
     });
     if (!response.ok) {
-      throw new Error(await response.text());
+      throw new Error(await errorMessageFromResponse(response));
     }
     return response.json() as Promise<T>;
   } catch (err) {
@@ -114,7 +173,7 @@ export async function postJson<T>(path: string, payload: unknown): Promise<T> {
       body: JSON.stringify(payload),
     });
     if (!response.ok) {
-      throw new Error(await response.text());
+      throw new Error(await errorMessageFromResponse(response));
     }
     return response.json() as Promise<T>;
   } catch (err) {
@@ -131,7 +190,7 @@ export async function patchJson<T>(path: string, payload: unknown): Promise<T> {
       body: JSON.stringify(payload),
     });
     if (!response.ok) {
-      throw new Error(await response.text());
+      throw new Error(await errorMessageFromResponse(response));
     }
     return response.json() as Promise<T>;
   } catch (err) {
@@ -146,7 +205,7 @@ export async function getJson<T>(path: string): Promise<T> {
       headers: buildHeaders(),
     });
     if (!response.ok) {
-      throw new Error(await response.text());
+      throw new Error(await errorMessageFromResponse(response));
     }
     return response.json() as Promise<T>;
   } catch (err) {
@@ -162,9 +221,13 @@ export async function deleteJson<T>(path: string): Promise<T> {
       headers: buildHeaders(),
     });
     if (!response.ok) {
-      throw new Error(await response.text());
+      throw new Error(await errorMessageFromResponse(response));
     }
-    return response.json() as Promise<T>;
+    const text = await response.text();
+    if (!text.trim()) {
+      return {} as T;
+    }
+    return JSON.parse(text) as T;
   } catch (err) {
     throw new Error(networkErrorMessage(err));
   }

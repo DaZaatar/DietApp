@@ -22,7 +22,7 @@ def ensure_sample_plan(db):
     if plan:
         return plan
 
-    plan = MealPlan(name='Sample Week Plan')
+    plan = MealPlan(name='Sample Week Plan', starts_on=datetime.now(UTC).date())
     db.add(plan)
     db.flush()
 
@@ -49,8 +49,8 @@ def ensure_sample_plan(db):
         ),
     ]
 
-    for day_name, meals in days_payload:
-        day = Day(week_id=week.id, day_name=day_name)
+    for day_idx, (day_name, meals) in enumerate(days_payload):
+        day = Day(week_id=week.id, day_name=day_name, day_index=day_idx)
         db.add(day)
         db.flush()
         for meal_type, title, ingredients in meals:

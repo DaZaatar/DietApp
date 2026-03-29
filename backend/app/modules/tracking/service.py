@@ -41,6 +41,8 @@ class TrackingService:
                 Week.meal_plan_id.label("meal_plan_id"),
                 Week.week_index.label("week_index"),
                 Day.day_name.label("day_name"),
+                Day.day_index.label("day_index"),
+                MealPlan.starts_on.label("plan_starts_on"),
                 Meal.meal_type.label("meal_type"),
                 Meal.title.label("title"),
                 MealTrackingEntry.status.label("status"),
@@ -49,6 +51,7 @@ class TrackingService:
             )
             .join(Day, Meal.day_id == Day.id)
             .join(Week, Day.week_id == Week.id)
+            .join(MealPlan, MealPlan.id == Week.meal_plan_id)
             .outerjoin(
                 MealTrackingEntry,
                 and_(MealTrackingEntry.meal_id == Meal.id, MealTrackingEntry.user_id == user_id),
@@ -82,6 +85,8 @@ class TrackingService:
                 "meal_plan_id": row.meal_plan_id,
                 "week_index": row.week_index,
                 "day_name": row.day_name,
+                "day_index": row.day_index if row.day_index is not None else 0,
+                "plan_starts_on": row.plan_starts_on,
                 "meal_type": row.meal_type,
                 "title": row.title,
                 "status": row.status or MealStatus.planned,

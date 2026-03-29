@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from fastapi import HTTPException
 from sqlalchemy import delete, select
@@ -20,18 +20,34 @@ from app.modules.models import (
 from app.modules.tracking.storage import LocalMediaStorage
 
 
+def _resolve_starts_on(raw: object) -> date:
+    if raw is None:
+        return datetime.now(UTC).date()
+    if isinstance(raw, date):
+        return raw
+    if isinstance(raw, str) and raw.strip():
+        return date.fromisoformat(raw.strip()[:10])
+    return datetime.now(UTC).date()
+
+
 def persist_imported_meal_plan(db: Session, payload: dict) -> MealPlan:
-    meal_plan = MealPlan(name=payload.get("name", f"Imported {datetime.now(UTC).date()}"))
+    starts_on = _resolve_starts_on(payload.get("starts_on"))
+    meal_plan = MealPlan(
+        name=payload.get("name", f"Imported {datetime.now(UTC).date()}"),
+        starts_on=starts_on,
+    )
     db.add(meal_plan)
     db.flush()
 
+    day_index = 0
     for week_data in payload.get("weeks", []):
         week = Week(meal_plan_id=meal_plan.id, week_index=week_data["week_index"])
         db.add(week)
         db.flush()
 
         for day_data in week_data.get("days", []):
-            day = Day(week_id=week.id, day_name=day_data["day"])
+            day = Day(week_id=week.id, day_name=day_data["day"], day_index=day_index)
+            day_index += 1
             db.add(day)
             db.flush()
 

@@ -1,7 +1,7 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from enum import Enum
 
-from sqlalchemy import Boolean, DateTime, Enum as SqlEnum, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, Enum as SqlEnum, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -30,6 +30,7 @@ class MealPlan(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    starts_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive)
     weeks: Mapped[list["Week"]] = relationship(back_populates="meal_plan", cascade="all, delete-orphan")
 
@@ -51,6 +52,7 @@ class Day(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     week_id: Mapped[int] = mapped_column(ForeignKey("weeks.id"), nullable=False)
     day_name: Mapped[str] = mapped_column(String(30), nullable=False)
+    day_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     week: Mapped["Week"] = relationship(back_populates="days")
     meals: Mapped[list["Meal"]] = relationship(back_populates="day", cascade="all, delete-orphan")

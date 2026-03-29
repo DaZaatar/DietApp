@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict
 
@@ -46,6 +46,8 @@ class TrackingMealItemResponse(BaseModel):
     meal_plan_id: int
     week_index: int
     day_name: str
+    day_index: int = 0
+    plan_starts_on: date | None = None
     meal_type: str
     title: str
     status: MealStatus

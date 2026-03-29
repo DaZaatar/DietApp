@@ -3,8 +3,15 @@
 @tailwind utilities;
 
 :root {
+  color-scheme: light;
   color: #0f172a;
   background-color: #f8fafc;
+}
+
+.dark {
+  color-scheme: dark;
+  color: #e2e8f0;
+  background-color: #020617;
 }
 
 * {

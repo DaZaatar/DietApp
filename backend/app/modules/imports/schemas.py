@@ -1,3 +1,5 @@
+from datetime import date
+
 from pydantic import BaseModel, Field
 
 
@@ -30,6 +32,10 @@ class ParsedWeek(BaseModel):
 class MealPlanImportPreview(BaseModel):
     name: str
     weeks: list[ParsedWeek]
+    starts_on: date | None = Field(
+        default=None,
+        description="First calendar day of the plan (week 1 day 1). Defaults to today on commit if omitted.",
+    )
 
 
 class ImportResult(BaseModel):

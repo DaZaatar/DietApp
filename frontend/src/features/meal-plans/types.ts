@@ -24,4 +24,6 @@ export type ParsedWeek = {
 export type MealPlanPreview = {
   name: string;
   weeks: ParsedWeek[];
+  /** ISO date YYYY-MM-DD — sent on commit; optional on preview-from-API */
+  starts_on?: string;
 };
