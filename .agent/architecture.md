@@ -21,11 +21,13 @@ Modular monolith with explicit module boundaries under `backend/app/modules`.
 - Production: disable dev header defaults via env (`ALLOW_DEV_USER_HEADER`, `ALLOW_DEFAULT_USER`)
 
 ## Frontend Structure
-Feature-first folders under `frontend/src/features` with shared app shell, `pages/` for Import, Tracking, Shopping, Login, Register. API client uses `credentials: "include"`; default `VITE_API_BASE_URL` is `/api/v1` (Vite proxy in dev, same origin in production Docker).
+Feature-first folders under `frontend/src/features` with shared app shell, `pages/` for Import, Tracking, Shopping, Reports, Login, Register. API client uses `credentials: "include"`; default `VITE_API_BASE_URL` is `/api/v1` (Vite proxy in dev, same origin in production Docker).
 
 ## Data Ownership
 - imports: parsing lifecycle and import logs
 - tracking: meal completion + attachment metadata
+- tracking: per-day computed status in tracker payload (`active`, `completed`, `ended`) used by UI day ordering
+- tracking: meal attachment viewer endpoint for tracker UI (`GET /tracking/meals/{meal_id}/attachments`) with inline image previews
 - tracking reports: HTML report generation over selectable date ranges with daily/weekly/bi-weekly grouping
   - swap-aware reporting uses immutable imported-slot fields on `meals` (`original_meal_type`, `original_title`)
   - report tables can embed uploaded meal images as inline thumbnails for print/PDF exports

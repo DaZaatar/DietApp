@@ -10,6 +10,7 @@ Phase 1 MVP foundations with vertical slices:
 3. Shopping checklist with DB-persisted check state, multiple meal plans, category filters
 4. Auth: register/login, HttpOnly cookie session, dev `X-User-Id` when enabled
 5. Reporting: HTML tracking reports for planned/eaten/skipped meals with date-range filters and daily/weekly/bi-weekly grouping, swap-aware imported-vs-current cross-check, and embedded uploaded images (print/save as PDF)
+6. Tracker UX: per-meal image viewer modal with expandable full-size preview; computed day-level status (`active`/`completed`/`ended`) and day ordering with non-active days moved later
 
 ## Architectural Guardrails
 - Modular monolith

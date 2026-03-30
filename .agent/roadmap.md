@@ -18,6 +18,8 @@
 - [x] Docker + Railway single-service deploy (static + API); Postgres URL handling; `PYTHONPATH` for Alembic
 - [x] Tracking reports: date-range HTML report with daily/weekly/bi-weekly grouping and print-to-PDF flow
 - [x] Tracking reports v2: swap-aware imported-vs-current columns, inline attachment images, and 2-week plan cross-check mode
+- [x] Tracker media UX: per-meal image viewer button, expandable full-size preview
+- [x] Tracker day-level status: computed `active/completed/ended` + non-active days moved toward end
 
 ## Phase 2
 - Ingredient normalization and merge logic
