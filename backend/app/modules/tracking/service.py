@@ -29,6 +29,43 @@ class TrackingService:
         db.refresh(entry)
         return entry
 
+    def list_meal_attachments(self, db: Session, user_id: int, meal_id: int) -> list[dict]:
+        meal = db.get(Meal, meal_id)
+        if meal is None:
+            raise HTTPException(status_code=404, detail="Meal not found")
+        rows = db.execute(
+            select(
+                MealAttachment.id.label("id"),
+                MealAttachment.original_filename.label("original_filename"),
+                MealAttachment.mime_type.label("mime_type"),
+                MealAttachment.note.label("note"),
+                MealAttachment.created_at.label("created_at"),
+                MealAttachment.storage_key.label("storage_key"),
+            )
+            .join(MealTrackingEntry, MealAttachment.tracking_entry_id == MealTrackingEntry.id)
+            .where(
+                MealTrackingEntry.user_id == user_id,
+                MealTrackingEntry.meal_id == meal_id,
+            )
+            .order_by(MealAttachment.created_at.desc(), MealAttachment.id.desc())
+        ).all()
+        results: list[dict] = []
+        for row in rows:
+            data_uri = self._attachment_data_uri(row.storage_key, row.mime_type)
+            if not data_uri:
+                continue
+            results.append(
+                {
+                    "id": row.id,
+                    "original_filename": row.original_filename,
+                    "mime_type": row.mime_type,
+                    "note": row.note,
+                    "created_at": row.created_at,
+                    "data_uri": data_uri,
+                }
+            )
+        return results
+
     def list_meals(self, db: Session, user_id: int, meal_plan_id: int | None = None):
         selected_plan_id = meal_plan_id
         if selected_plan_id is None:

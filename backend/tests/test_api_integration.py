@@ -205,6 +205,24 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertGreaterEqual(len(items), 1)
         self.assertIn("day_id", items[0])
 
+    def test_tracking_meal_attachments_endpoint_returns_images(self):
+        self.commit_sample_plan()
+        items = self.client.get("/api/v1/tracking/meals").json()
+        self.assertGreaterEqual(len(items), 1)
+        meal_id = items[0]["meal_id"]
+        attach = self.client.post(
+            f"/api/v1/tracking/meals/{meal_id}/attachments",
+            files={"file": ("meal.png", b"fake-png-bytes", "image/png")},
+            data={"note": "after meal"},
+        )
+        self.assertEqual(attach.status_code, 200)
+
+        listed = self.client.get(f"/api/v1/tracking/meals/{meal_id}/attachments")
+        self.assertEqual(listed.status_code, 200)
+        payload = listed.json()
+        self.assertGreaterEqual(len(payload), 1)
+        self.assertIn("data:image/png;base64", payload[0]["data_uri"])
+
     def test_tracking_html_report_filters_by_range_and_grouping(self):
         self.commit_sample_plan()
         response = self.client.get(
