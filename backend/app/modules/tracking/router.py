@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from datetime import date
+
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user_id
@@ -7,6 +10,7 @@ from app.modules.tracking.schemas import (
     AttachmentResponse,
     SwapDaysRequest,
     SwapMealsRequest,
+    TrackingReportGroupBy,
     TrackingMealItemResponse,
     TrackingEntryResponse,
     TrackingEntryUpdate,
@@ -24,6 +28,27 @@ def list_tracking_meals(
     db: Session = Depends(get_db),
 ):
     return service.list_meals(db, user_id=user_id, meal_plan_id=meal_plan_id)
+
+
+@router.get("/reports/html", response_class=HTMLResponse)
+def tracking_report_html(
+    start_date: date | None = None,
+    end_date: date | None = None,
+    group_by: TrackingReportGroupBy = Query(default=TrackingReportGroupBy.daily),
+    meal_plan_id: int | None = None,
+    auto_print: bool = False,
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    return service.build_html_report(
+        db,
+        user_id=user_id,
+        start_date=start_date,
+        end_date=end_date,
+        group_by=group_by.value,
+        meal_plan_id=meal_plan_id,
+        auto_print=auto_print,
+    )
 
 
 @router.patch("/meals/{meal_id}", response_model=TrackingEntryResponse)

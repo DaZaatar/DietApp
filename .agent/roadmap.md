@@ -16,6 +16,7 @@
 - [x] Shopping: multiple meal plans, delete meal plan, category filter chips
 - [x] Tracker: ingredients + expandable card, sort eaten/skipped to bottom, status styling
 - [x] Docker + Railway single-service deploy (static + API); Postgres URL handling; `PYTHONPATH` for Alembic
+- [x] Tracking reports: date-range HTML report with daily/weekly/bi-weekly grouping and print-to-PDF flow
 
 ## Phase 2
 - Ingredient normalization and merge logic
