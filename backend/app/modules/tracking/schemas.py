@@ -58,6 +58,11 @@ class TrackingReportGroupBy(str, Enum):
     biweekly = "biweekly"
 
 
+class TrackingReportMode(str, Enum):
+    timeline = "timeline"
+    biweekly_plan_check = "biweekly_plan_check"
+
+
 class TrackingMealItemResponse(BaseModel):
     meal_id: int
     day_id: int

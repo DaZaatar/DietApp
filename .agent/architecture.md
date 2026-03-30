@@ -27,6 +27,8 @@ Feature-first folders under `frontend/src/features` with shared app shell, `page
 - imports: parsing lifecycle and import logs
 - tracking: meal completion + attachment metadata
 - tracking reports: HTML report generation over selectable date ranges with daily/weekly/bi-weekly grouping
+  - swap-aware reporting uses immutable imported-slot fields on `meals` (`original_meal_type`, `original_title`)
+  - report tables can embed uploaded meal images as inline thumbnails for print/PDF exports
 - ai: OpenRouter integration only
 - meal_plans: list + delete meal plans (cascades shopping/tracking data; attachment files deleted from disk)
 - shopping: user-scoped checklist state and meal-plan-scoped aggregated ingredient view

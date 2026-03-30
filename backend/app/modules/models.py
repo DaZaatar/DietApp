@@ -65,6 +65,8 @@ class Meal(Base):
     day_id: Mapped[int] = mapped_column(ForeignKey("days.id"), nullable=False)
     meal_type: Mapped[str] = mapped_column(String(30), nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
+    original_meal_type: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    original_title: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     day: Mapped["Day"] = relationship(back_populates="meals")
     ingredients: Mapped[list["MealIngredient"]] = relationship(back_populates="meal", cascade="all, delete-orphan")

@@ -11,6 +11,7 @@ from app.modules.tracking.schemas import (
     SwapDaysRequest,
     SwapMealsRequest,
     TrackingReportGroupBy,
+    TrackingReportMode,
     TrackingMealItemResponse,
     TrackingEntryResponse,
     TrackingEntryUpdate,
@@ -35,6 +36,7 @@ def tracking_report_html(
     start_date: date | None = None,
     end_date: date | None = None,
     group_by: TrackingReportGroupBy = Query(default=TrackingReportGroupBy.daily),
+    mode: TrackingReportMode = Query(default=TrackingReportMode.timeline),
     meal_plan_id: int | None = None,
     auto_print: bool = False,
     user_id: int = Depends(get_current_user_id),
@@ -46,6 +48,7 @@ def tracking_report_html(
         start_date=start_date,
         end_date=end_date,
         group_by=group_by.value,
+        mode=mode.value,
         meal_plan_id=meal_plan_id,
         auto_print=auto_print,
     )
