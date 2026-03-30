@@ -56,6 +56,8 @@ def persist_imported_meal_plan(db: Session, payload: dict) -> MealPlan:
                     day_id=day.id,
                     meal_type=meal_data["meal_type"],
                     title=meal_data["title"],
+                    original_meal_type=meal_data["meal_type"],
+                    original_title=meal_data["title"],
                 )
                 db.add(meal)
                 db.flush()

@@ -6,6 +6,7 @@
 - Shopping: list all meal plans, per-plan expandable cards, delete meal plan (DB + attachment files on disk).
 - Tracker: ingredients per meal, expandable UI, eaten/skipped ordering and styling.
 - Reports: tracking HTML report endpoint (`/tracking/reports/html`) with date range + daily/weekly/bi-weekly grouping; new frontend Reports page with printable/PDF-friendly flow.
+- Reports v2: swap-aware tables (imported vs current slot), uploaded image rendering in report output, and dedicated 14-day plan cross-check mode.
 - Docker/Railway: root Dockerfile, `entrypoint.sh`, `PYTHONPATH`, `Settings` for `DATABASE_URL` + Railway errors, Postgres URL normalization.
 - Integration tests expanded (auth cookie, shopping order, meal plan delete, attachment file cleanup).
 - `.agent/skills` for start/stop dev servers and clear DB data.

@@ -4,6 +4,7 @@ import { buildApiUrl } from "../shared/lib/api";
 
 type ReportPeriodPreset = "daily" | "weekly" | "biweekly" | "custom";
 type GroupBy = "daily" | "weekly" | "biweekly";
+type ReportView = "timeline" | "biweekly_plan_check";
 
 function toInputDate(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -34,6 +35,7 @@ function presetRange(preset: ReportPeriodPreset): { startDate: string; endDate: 
 }
 
 export function ReportsPage() {
+  const [view, setView] = useState<ReportView>("timeline");
   const [preset, setPreset] = useState<ReportPeriodPreset>("biweekly");
   const defaults = useMemo(() => presetRange("biweekly"), []);
   const [startDate, setStartDate] = useState(defaults.startDate);
@@ -53,19 +55,24 @@ export function ReportsPage() {
   }
 
   function buildReportPath(autoPrint: boolean): string | null {
-    if (!startDate || !endDate) {
-      setError("Please set both start and end dates.");
-      return null;
-    }
-    if (startDate > endDate) {
-      setError("Start date must be on or before end date.");
-      return null;
+    if (view === "timeline") {
+      if (!startDate || !endDate) {
+        setError("Please set both start and end dates.");
+        return null;
+      }
+      if (startDate > endDate) {
+        setError("Start date must be on or before end date.");
+        return null;
+      }
     }
     setError(null);
     const params = new URLSearchParams();
-    params.set("start_date", startDate);
-    params.set("end_date", endDate);
-    params.set("group_by", groupBy);
+    params.set("mode", view);
+    if (view === "timeline") {
+      params.set("start_date", startDate);
+      params.set("end_date", endDate);
+      params.set("group_by", groupBy);
+    }
     if (mealPlanId.trim()) {
       params.set("meal_plan_id", mealPlanId.trim());
     }
@@ -85,62 +92,100 @@ export function ReportsPage() {
     <section className="space-y-4">
       <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Meal Reports</h2>
       <p className="text-sm text-slate-600 dark:text-slate-400">
-        Generate an HTML report for planned/eaten/skipped meals by period. You can print it or save it as PDF.
+        Generate tabulated reports for planned/eaten/skipped meals. Reports include swap-aware cross-checks and uploaded
+        meal images.
       </p>
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label className="text-sm">
-            <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Period preset</span>
-            <select
-              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100"
-              value={preset}
-              onChange={(e) => onPresetChange(e.target.value as ReportPeriodPreset)}
-            >
-              <option value="daily">Daily (today)</option>
-              <option value="weekly">Weekly (last 7 days)</option>
-              <option value="biweekly">Bi-weekly (last 14 days)</option>
-              <option value="custom">Custom range</option>
-            </select>
-          </label>
-
-          <label className="text-sm">
-            <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Group by</span>
-            <select
-              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100"
-              value={groupBy}
-              onChange={(e) => setGroupBy(e.target.value as GroupBy)}
-            >
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
-              <option value="biweekly">Bi-weekly</option>
-            </select>
-          </label>
-
-          <label className="text-sm">
-            <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Start date</span>
-            <input
-              type="date"
-              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-            />
-          </label>
-
-          <label className="text-sm">
-            <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">End date</span>
-            <input
-              type="date"
-              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-            />
-          </label>
+        <div className="mb-4 flex flex-wrap gap-2 border-b border-slate-200 pb-3 dark:border-slate-700">
+          <button
+            type="button"
+            className={`rounded-md px-3 py-2 text-sm ${
+              view === "timeline"
+                ? "bg-slate-900 text-white dark:bg-brand-600"
+                : "border border-slate-300 text-slate-800 dark:border-slate-600 dark:text-slate-200"
+            }`}
+            onClick={() => {
+              setView("timeline");
+              setError(null);
+            }}
+          >
+            Timeline report
+          </button>
+          <button
+            type="button"
+            className={`rounded-md px-3 py-2 text-sm ${
+              view === "biweekly_plan_check"
+                ? "bg-slate-900 text-white dark:bg-brand-600"
+                : "border border-slate-300 text-slate-800 dark:border-slate-600 dark:text-slate-200"
+            }`}
+            onClick={() => {
+              setView("biweekly_plan_check");
+              setError(null);
+            }}
+          >
+            2-week plan cross-check
+          </button>
         </div>
+
+        {view === "timeline" ? (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="text-sm">
+              <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Period preset</span>
+              <select
+                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100"
+                value={preset}
+                onChange={(e) => onPresetChange(e.target.value as ReportPeriodPreset)}
+              >
+                <option value="daily">Daily (today)</option>
+                <option value="weekly">Weekly (last 7 days)</option>
+                <option value="biweekly">Bi-weekly (last 14 days)</option>
+                <option value="custom">Custom range</option>
+              </select>
+            </label>
+
+            <label className="text-sm">
+              <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Group by</span>
+              <select
+                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100"
+                value={groupBy}
+                onChange={(e) => setGroupBy(e.target.value as GroupBy)}
+              >
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="biweekly">Bi-weekly</option>
+              </select>
+            </label>
+
+            <label className="text-sm">
+              <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Start date</span>
+              <input
+                type="date"
+                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+              />
+            </label>
+
+            <label className="text-sm">
+              <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">End date</span>
+              <input
+                type="date"
+                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+              />
+            </label>
+          </div>
+        ) : (
+          <p className="text-sm text-slate-600 dark:text-slate-400">
+            Generates a full 14-day tabulated report and cross-checks each slot against the imported plan.
+          </p>
+        )}
 
         <label className="mt-4 block text-sm">
           <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">
-            Optional meal plan ID filter
+            {view === "biweekly_plan_check" ? "Meal plan ID (optional, defaults to latest plan)" : "Optional meal plan ID filter"}
           </span>
           <input
             type="number"

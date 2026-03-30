@@ -35,6 +35,15 @@ class AttachmentResponse(BaseModel):
     note: str | None
 
 
+class TrackingMealAttachmentResponse(BaseModel):
+    id: int
+    original_filename: str
+    mime_type: str
+    note: str | None
+    created_at: datetime
+    data_uri: str
+
+
 class TrackingIngredientItem(BaseModel):
     name: str
     quantity: str
@@ -56,6 +65,11 @@ class TrackingReportGroupBy(str, Enum):
     daily = "daily"
     weekly = "weekly"
     biweekly = "biweekly"
+
+
+class TrackingReportMode(str, Enum):
+    timeline = "timeline"
+    biweekly_plan_check = "biweekly_plan_check"
 
 
 class TrackingMealItemResponse(BaseModel):

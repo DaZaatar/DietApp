@@ -1,3 +1,4 @@
+import base64
 from datetime import UTC, date, datetime, timedelta
 from html import escape
 
@@ -27,6 +28,43 @@ class TrackingService:
         db.commit()
         db.refresh(entry)
         return entry
+
+    def list_meal_attachments(self, db: Session, user_id: int, meal_id: int) -> list[dict]:
+        meal = db.get(Meal, meal_id)
+        if meal is None:
+            raise HTTPException(status_code=404, detail="Meal not found")
+        rows = db.execute(
+            select(
+                MealAttachment.id.label("id"),
+                MealAttachment.original_filename.label("original_filename"),
+                MealAttachment.mime_type.label("mime_type"),
+                MealAttachment.note.label("note"),
+                MealAttachment.created_at.label("created_at"),
+                MealAttachment.storage_key.label("storage_key"),
+            )
+            .join(MealTrackingEntry, MealAttachment.tracking_entry_id == MealTrackingEntry.id)
+            .where(
+                MealTrackingEntry.user_id == user_id,
+                MealTrackingEntry.meal_id == meal_id,
+            )
+            .order_by(MealAttachment.created_at.desc(), MealAttachment.id.desc())
+        ).all()
+        results: list[dict] = []
+        for row in rows:
+            data_uri = self._attachment_data_uri(row.storage_key, row.mime_type)
+            if not data_uri:
+                continue
+            results.append(
+                {
+                    "id": row.id,
+                    "original_filename": row.original_filename,
+                    "mime_type": row.mime_type,
+                    "note": row.note,
+                    "created_at": row.created_at,
+                    "data_uri": data_uri,
+                }
+            )
+        return results
 
     def list_meals(self, db: Session, user_id: int, meal_plan_id: int | None = None):
         selected_plan_id = meal_plan_id
@@ -136,164 +174,87 @@ class TrackingService:
         label = f"Bi-week: {bucket_start.isoformat()} to {bucket_end.isoformat()}"
         return (f"bw-{bucket_start.isoformat()}", bucket_start, bucket_end, label)
 
-    def build_html_report(
-        self,
-        db: Session,
-        user_id: int,
-        start_date: date | None = None,
-        end_date: date | None = None,
-        group_by: str = "daily",
-        meal_plan_id: int | None = None,
-        auto_print: bool = False,
-    ) -> str:
-        start, end = self._resolve_report_date_range(start_date, end_date)
-        if group_by not in {"daily", "weekly", "biweekly"}:
-            raise HTTPException(status_code=400, detail="Unsupported grouping mode")
+    def _attachment_data_uri(self, storage_key: str, mime_type: str) -> str | None:
+        path = self.storage.root / storage_key
+        if not path.is_file():
+            return None
+        content = path.read_bytes()
+        # Keep report payload manageable for browser print/PDF.
+        if len(content) > 1_500_000:
+            return None
+        safe_mime = mime_type if mime_type.startswith("image/") else "application/octet-stream"
+        encoded = base64.b64encode(content).decode("ascii")
+        return f"data:{safe_mime};base64,{encoded}"
 
-        stmt = (
+    def _load_attachments_by_meal(self, db: Session, user_id: int, meal_ids: list[int]) -> dict[int, list[dict[str, str]]]:
+        if not meal_ids:
+            return {}
+        rows = db.execute(
             select(
-                Meal.id.label("meal_id"),
-                Meal.title.label("title"),
-                Meal.meal_type.label("meal_type"),
-                Day.day_name.label("day_name"),
-                Day.day_index.label("day_index"),
-                Week.week_index.label("week_index"),
-                MealPlan.id.label("meal_plan_id"),
-                MealPlan.name.label("meal_plan_name"),
-                MealPlan.starts_on.label("plan_starts_on"),
-                MealPlan.created_at.label("plan_created_at"),
-                MealTrackingEntry.status.label("status"),
-                MealTrackingEntry.notes.label("notes"),
-                MealTrackingEntry.eaten_at.label("eaten_at"),
+                MealTrackingEntry.meal_id.label("meal_id"),
+                MealAttachment.storage_key.label("storage_key"),
+                MealAttachment.mime_type.label("mime_type"),
+                MealAttachment.original_filename.label("original_filename"),
+                MealAttachment.note.label("note"),
+                MealAttachment.created_at.label("created_at"),
             )
-            .join(Day, Meal.day_id == Day.id)
-            .join(Week, Day.week_id == Week.id)
-            .join(MealPlan, Week.meal_plan_id == MealPlan.id)
-            .outerjoin(
-                MealTrackingEntry,
-                and_(MealTrackingEntry.meal_id == Meal.id, MealTrackingEntry.user_id == user_id),
+            .join(MealAttachment, MealAttachment.tracking_entry_id == MealTrackingEntry.id)
+            .where(
+                MealTrackingEntry.user_id == user_id,
+                MealTrackingEntry.meal_id.in_(meal_ids),
             )
-            .order_by(MealPlan.id.asc(), Day.day_index.asc(), Meal.id.asc())
-        )
-        if meal_plan_id is not None:
-            stmt = stmt.where(Week.meal_plan_id == meal_plan_id)
-
-        rows = db.execute(stmt).all()
-        grouped: dict[str, dict] = {}
-        totals = {
-            MealStatus.planned.value: 0,
-            MealStatus.eaten.value: 0,
-            MealStatus.skipped.value: 0,
-        }
-        total_meals = 0
-
+            .order_by(MealTrackingEntry.meal_id.asc(), MealAttachment.created_at.desc())
+        ).all()
+        by_meal: dict[int, list[dict[str, str]]] = {}
         for row in rows:
-            base_date = row.plan_starts_on or row.plan_created_at.date()
-            meal_date = base_date + timedelta(days=row.day_index or 0)
-            if meal_date < start or meal_date > end:
+            bucket = by_meal.setdefault(row.meal_id, [])
+            if len(bucket) >= 3:
                 continue
-
-            status = row.status.value if isinstance(row.status, MealStatus) else MealStatus.planned.value
-            bucket_key, bucket_start, _bucket_end, bucket_label = self._build_report_bucket(meal_date, group_by, start)
-            if bucket_key not in grouped:
-                grouped[bucket_key] = {
-                    "start": bucket_start,
-                    "label": bucket_label,
-                    "totals": {
-                        MealStatus.planned.value: 0,
-                        MealStatus.eaten.value: 0,
-                        MealStatus.skipped.value: 0,
-                    },
-                    "rows": [],
-                }
-
-            grouped[bucket_key]["totals"][status] += 1
-            grouped[bucket_key]["rows"].append(
+            data_uri = self._attachment_data_uri(row.storage_key, row.mime_type)
+            if not data_uri:
+                continue
+            bucket.append(
                 {
-                    "meal_date": meal_date.isoformat(),
-                    "meal_plan_id": row.meal_plan_id,
-                    "meal_plan_name": row.meal_plan_name,
-                    "day_name": row.day_name,
-                    "week_index": row.week_index,
-                    "meal_type": row.meal_type,
-                    "title": row.title,
-                    "status": status,
-                    "notes": row.notes,
-                    "eaten_at": row.eaten_at.isoformat(sep=" ", timespec="minutes") if row.eaten_at else "",
+                    "src": data_uri,
+                    "filename": row.original_filename or "image",
+                    "note": row.note or "",
                 }
             )
-            totals[status] += 1
-            total_meals += 1
+        return by_meal
 
-        ordered_groups = sorted(grouped.values(), key=lambda g: g["start"])
-        generated_at = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
-        escaped_range = f"{start.isoformat()} to {end.isoformat()}"
-        escaped_group_by = group_by.capitalize()
-        plan_scope = f"Meal plan filter: #{meal_plan_id}" if meal_plan_id is not None else "Meal plan filter: all plans"
+    def _render_attachments_cell(self, attachments: list[dict[str, str]]) -> str:
+        if not attachments:
+            return "-"
+        images: list[str] = []
+        for item in attachments:
+            note = f"<div class='img-note'>{escape(item['note'])}</div>" if item["note"] else ""
+            images.append(
+                "<figure class='thumb'>"
+                f"<img src='{item['src']}' alt='{escape(item['filename'])}' />"
+                f"{note}"
+                "</figure>"
+            )
+        return f"<div class='thumb-grid'>{''.join(images)}</div>"
 
-        groups_html_parts: list[str] = []
-        if not ordered_groups:
-            groups_html_parts.append("<p>No meals found in this date range.</p>")
-        else:
-            for group in ordered_groups:
-                row_html = []
-                for item in group["rows"]:
-                    notes = escape(item["notes"]) if item["notes"] else "-"
-                    eaten_at = escape(item["eaten_at"]) if item["eaten_at"] else "-"
-                    row_html.append(
-                        "<tr>"
-                        f"<td>{escape(item['meal_date'])}</td>"
-                        f"<td>{escape(item['meal_plan_name'])} (#{item['meal_plan_id']})</td>"
-                        f"<td>W{item['week_index']} · {escape(item['day_name'])}</td>"
-                        f"<td>{escape(item['meal_type'])}</td>"
-                        f"<td>{escape(item['title'])}</td>"
-                        f"<td class='status-{escape(item['status'])}'>{escape(item['status'])}</td>"
-                        f"<td>{notes}</td>"
-                        f"<td>{eaten_at}</td>"
-                        "</tr>"
-                    )
-                groups_html_parts.append(
-                    f"""
-                    <section class="group">
-                      <h3>{escape(group['label'])}</h3>
-                      <p class="group-summary">
-                        Planned: <strong>{group['totals'][MealStatus.planned.value]}</strong> ·
-                        Eaten: <strong>{group['totals'][MealStatus.eaten.value]}</strong> ·
-                        Skipped: <strong>{group['totals'][MealStatus.skipped.value]}</strong>
-                      </p>
-                      <div class="table-wrap">
-                        <table>
-                          <thead>
-                            <tr>
-                              <th>Date</th>
-                              <th>Meal plan</th>
-                              <th>Day</th>
-                              <th>Meal type</th>
-                              <th>Meal title</th>
-                              <th>Status</th>
-                              <th>Notes</th>
-                              <th>Eaten at</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {"".join(row_html)}
-                          </tbody>
-                        </table>
-                      </div>
-                    </section>
-                    """
-                )
-
+    def _render_html_shell(
+        self,
+        title: str,
+        generated_at: str,
+        meta_line: str,
+        totals_html: str,
+        breakdown_title: str,
+        breakdown_html: str,
+        auto_print: bool,
+    ) -> str:
         auto_print_script = (
             "<script>window.addEventListener('load', () => window.print());</script>" if auto_print else ""
         )
-
         return f"""<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Meal Tracking Report</title>
+    <title>{escape(title)}</title>
     <style>
       :root {{
         color-scheme: light;
@@ -353,6 +314,34 @@ class TrackingService:
         color: #92400e;
         font-weight: 700;
       }}
+      .swap-yes {{
+        color: #7c2d12;
+        font-weight: 700;
+      }}
+      .swap-no {{
+        color: #14532d;
+        font-weight: 600;
+      }}
+      .thumb-grid {{
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+      }}
+      .thumb {{
+        margin: 0;
+      }}
+      .thumb img {{
+        width: 64px;
+        height: 64px;
+        object-fit: cover;
+        border-radius: 6px;
+        border: 1px solid #cbd5e1;
+      }}
+      .img-note {{
+        max-width: 90px;
+        font-size: 0.7rem;
+        color: #475569;
+      }}
       @media print {{
         body {{
           margin: 0.5in;
@@ -365,26 +354,392 @@ class TrackingService:
     {auto_print_script}
   </head>
   <body>
-    <h1>Meal Tracking Report</h1>
+    <h1>{escape(title)}</h1>
     <p class="meta">Generated: {escape(generated_at)}</p>
-    <p class="meta">Date range: {escape(escaped_range)} · Grouping: {escape(escaped_group_by)} · {escape(plan_scope)}</p>
+    <p class="meta">{escape(meta_line)}</p>
     <section class="totals">
-      <h2>Summary totals</h2>
-      <p>Total meals: <strong>{total_meals}</strong></p>
-      <p>
-        Planned: <strong>{totals[MealStatus.planned.value]}</strong> ·
-        Eaten: <strong>{totals[MealStatus.eaten.value]}</strong> ·
-        Skipped: <strong>{totals[MealStatus.skipped.value]}</strong>
-      </p>
+      {totals_html}
       <p class="no-print">Tip: use your browser Print dialog to Save as PDF.</p>
     </section>
     <section>
-      <h2>Breakdown</h2>
-      {"".join(groups_html_parts)}
+      <h2>{escape(breakdown_title)}</h2>
+      {breakdown_html}
     </section>
   </body>
 </html>
 """
+
+    def _build_timeline_report_html(
+        self,
+        db: Session,
+        user_id: int,
+        start_date: date,
+        end_date: date,
+        group_by: str,
+        meal_plan_id: int | None,
+        auto_print: bool,
+    ) -> str:
+        stmt = (
+            select(
+                Meal.id.label("meal_id"),
+                Meal.title.label("title"),
+                Meal.meal_type.label("meal_type"),
+                Meal.original_title.label("original_title"),
+                Meal.original_meal_type.label("original_meal_type"),
+                Day.day_name.label("day_name"),
+                Day.day_index.label("day_index"),
+                Week.week_index.label("week_index"),
+                MealPlan.id.label("meal_plan_id"),
+                MealPlan.name.label("meal_plan_name"),
+                MealPlan.starts_on.label("plan_starts_on"),
+                MealPlan.created_at.label("plan_created_at"),
+                MealTrackingEntry.status.label("status"),
+                MealTrackingEntry.notes.label("notes"),
+                MealTrackingEntry.eaten_at.label("eaten_at"),
+            )
+            .join(Day, Meal.day_id == Day.id)
+            .join(Week, Day.week_id == Week.id)
+            .join(MealPlan, Week.meal_plan_id == MealPlan.id)
+            .outerjoin(
+                MealTrackingEntry,
+                and_(MealTrackingEntry.meal_id == Meal.id, MealTrackingEntry.user_id == user_id),
+            )
+            .order_by(MealPlan.id.asc(), Day.day_index.asc(), Meal.id.asc())
+        )
+        if meal_plan_id is not None:
+            stmt = stmt.where(Week.meal_plan_id == meal_plan_id)
+        rows = db.execute(stmt).all()
+        meal_ids = [row.meal_id for row in rows]
+        attachments_by_meal = self._load_attachments_by_meal(db, user_id, meal_ids)
+
+        grouped: dict[str, dict] = {}
+        totals = {
+            MealStatus.planned.value: 0,
+            MealStatus.eaten.value: 0,
+            MealStatus.skipped.value: 0,
+        }
+        swapped_total = 0
+        total_meals = 0
+
+        for row in rows:
+            base_date = row.plan_starts_on or row.plan_created_at.date()
+            meal_date = base_date + timedelta(days=row.day_index or 0)
+            if meal_date < start_date or meal_date > end_date:
+                continue
+            if isinstance(row.status, MealStatus):
+                status = row.status.value
+            elif isinstance(row.status, str) and row.status in {s.value for s in MealStatus}:
+                status = row.status
+            else:
+                status = MealStatus.planned.value
+            imported_title = row.original_title or row.title
+            imported_type = row.original_meal_type or row.meal_type
+            swapped = imported_title != row.title or imported_type != row.meal_type
+            bucket_key, bucket_start, _bucket_end, bucket_label = self._build_report_bucket(meal_date, group_by, start_date)
+            if bucket_key not in grouped:
+                grouped[bucket_key] = {
+                    "start": bucket_start,
+                    "label": bucket_label,
+                    "totals": {
+                        MealStatus.planned.value: 0,
+                        MealStatus.eaten.value: 0,
+                        MealStatus.skipped.value: 0,
+                    },
+                    "rows": [],
+                }
+            grouped[bucket_key]["totals"][status] += 1
+            grouped[bucket_key]["rows"].append(
+                {
+                    "meal_date": meal_date.isoformat(),
+                    "meal_plan_id": row.meal_plan_id,
+                    "meal_plan_name": row.meal_plan_name,
+                    "day_name": row.day_name,
+                    "week_index": row.week_index,
+                    "imported": f"{imported_type}: {imported_title}",
+                    "current": f"{row.meal_type}: {row.title}",
+                    "swapped": swapped,
+                    "status": status,
+                    "notes": row.notes,
+                    "eaten_at": row.eaten_at.isoformat(sep=" ", timespec="minutes") if row.eaten_at else "",
+                    "attachments": attachments_by_meal.get(row.meal_id, []),
+                }
+            )
+            totals[status] += 1
+            total_meals += 1
+            if swapped:
+                swapped_total += 1
+
+        ordered_groups = sorted(grouped.values(), key=lambda g: g["start"])
+        groups_html_parts: list[str] = []
+        if not ordered_groups:
+            groups_html_parts.append("<p>No meals found in this date range.</p>")
+        else:
+            for group in ordered_groups:
+                row_html: list[str] = []
+                for item in group["rows"]:
+                    notes = escape(item["notes"]) if item["notes"] else "-"
+                    eaten_at = escape(item["eaten_at"]) if item["eaten_at"] else "-"
+                    swapped_text = "Yes" if item["swapped"] else "No"
+                    swapped_class = "swap-yes" if item["swapped"] else "swap-no"
+                    row_html.append(
+                        "<tr>"
+                        f"<td>{escape(item['meal_date'])}</td>"
+                        f"<td>{escape(item['meal_plan_name'])} (#{item['meal_plan_id']})</td>"
+                        f"<td>W{item['week_index']} · {escape(item['day_name'])}</td>"
+                        f"<td>{escape(item['imported'])}</td>"
+                        f"<td>{escape(item['current'])}</td>"
+                        f"<td class='{swapped_class}'>{swapped_text}</td>"
+                        f"<td class='status-{escape(item['status'])}'>{escape(item['status'])}</td>"
+                        f"<td>{notes}</td>"
+                        f"<td>{eaten_at}</td>"
+                        f"<td>{self._render_attachments_cell(item['attachments'])}</td>"
+                        "</tr>"
+                    )
+                groups_html_parts.append(
+                    f"""
+                    <section class="group">
+                      <h3>{escape(group['label'])}</h3>
+                      <p class="group-summary">
+                        Planned: <strong>{group['totals'][MealStatus.planned.value]}</strong> ·
+                        Eaten: <strong>{group['totals'][MealStatus.eaten.value]}</strong> ·
+                        Skipped: <strong>{group['totals'][MealStatus.skipped.value]}</strong>
+                      </p>
+                      <div class="table-wrap">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Date</th>
+                              <th>Meal plan</th>
+                              <th>Day</th>
+                              <th>Imported slot</th>
+                              <th>Current slot</th>
+                              <th>Swapped?</th>
+                              <th>Status</th>
+                              <th>Notes</th>
+                              <th>Eaten at</th>
+                              <th>Images</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {"".join(row_html)}
+                          </tbody>
+                        </table>
+                      </div>
+                    </section>
+                    """
+                )
+
+        generated_at = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
+        plan_scope = f"Meal plan filter: #{meal_plan_id}" if meal_plan_id is not None else "Meal plan filter: all plans"
+        meta_line = (
+            f"Mode: Timeline · Date range: {start_date.isoformat()} to {end_date.isoformat()} · "
+            f"Grouping: {group_by.capitalize()} · {plan_scope}"
+        )
+        totals_html = (
+            "<h2>Summary totals</h2>"
+            f"<p>Total meals: <strong>{total_meals}</strong> · Swapped slots: <strong>{swapped_total}</strong></p>"
+            "<p>"
+            f"Planned: <strong>{totals[MealStatus.planned.value]}</strong> · "
+            f"Eaten: <strong>{totals[MealStatus.eaten.value]}</strong> · "
+            f"Skipped: <strong>{totals[MealStatus.skipped.value]}</strong>"
+            "</p>"
+        )
+        return self._render_html_shell(
+            title="Meal Tracking Report",
+            generated_at=generated_at,
+            meta_line=meta_line,
+            totals_html=totals_html,
+            breakdown_title="Breakdown",
+            breakdown_html="".join(groups_html_parts),
+            auto_print=auto_print,
+        )
+
+    def _build_biweekly_crosscheck_report_html(
+        self,
+        db: Session,
+        user_id: int,
+        meal_plan_id: int | None,
+        auto_print: bool,
+    ) -> str:
+        selected_plan = db.get(MealPlan, meal_plan_id) if meal_plan_id is not None else db.scalar(
+            select(MealPlan).order_by(MealPlan.id.desc())
+        )
+        if selected_plan is None:
+            raise HTTPException(status_code=404, detail="Meal plan not found")
+        start_date = selected_plan.starts_on or selected_plan.created_at.date()
+        end_date = start_date + timedelta(days=13)
+
+        rows = db.execute(
+            select(
+                Meal.id.label("meal_id"),
+                Meal.title.label("title"),
+                Meal.meal_type.label("meal_type"),
+                Meal.original_title.label("original_title"),
+                Meal.original_meal_type.label("original_meal_type"),
+                Day.day_name.label("day_name"),
+                Day.day_index.label("day_index"),
+                Week.week_index.label("week_index"),
+                MealTrackingEntry.status.label("status"),
+                MealTrackingEntry.notes.label("notes"),
+                MealTrackingEntry.eaten_at.label("eaten_at"),
+            )
+            .join(Day, Meal.day_id == Day.id)
+            .join(Week, Day.week_id == Week.id)
+            .outerjoin(
+                MealTrackingEntry,
+                and_(MealTrackingEntry.meal_id == Meal.id, MealTrackingEntry.user_id == user_id),
+            )
+            .where(
+                Week.meal_plan_id == selected_plan.id,
+                Day.day_index >= 0,
+                Day.day_index <= 13,
+            )
+            .order_by(Day.day_index.asc(), Meal.id.asc())
+        ).all()
+        attachments_by_meal = self._load_attachments_by_meal(db, user_id, [row.meal_id for row in rows])
+
+        totals = {
+            MealStatus.planned.value: 0,
+            MealStatus.eaten.value: 0,
+            MealStatus.skipped.value: 0,
+        }
+        swapped_total = 0
+        day_rows: dict[int, list[dict]] = {}
+        for row in rows:
+            if isinstance(row.status, MealStatus):
+                status = row.status.value
+            elif isinstance(row.status, str) and row.status in {s.value for s in MealStatus}:
+                status = row.status
+            else:
+                status = MealStatus.planned.value
+            imported_title = row.original_title or row.title
+            imported_type = row.original_meal_type or row.meal_type
+            swapped = imported_title != row.title or imported_type != row.meal_type
+            totals[status] += 1
+            if swapped:
+                swapped_total += 1
+            day_rows.setdefault(row.day_index or 0, []).append(
+                {
+                    "date": (start_date + timedelta(days=row.day_index or 0)).isoformat(),
+                    "week_index": row.week_index,
+                    "day_name": row.day_name,
+                    "imported": f"{imported_type}: {imported_title}",
+                    "current": f"{row.meal_type}: {row.title}",
+                    "swapped": swapped,
+                    "status": status,
+                    "notes": row.notes,
+                    "eaten_at": row.eaten_at.isoformat(sep=" ", timespec="minutes") if row.eaten_at else "",
+                    "attachments": attachments_by_meal.get(row.meal_id, []),
+                }
+            )
+
+        body_parts: list[str] = []
+        if not day_rows:
+            body_parts.append("<p>No meals available for this 2-week plan.</p>")
+        else:
+            for idx in sorted(day_rows.keys()):
+                entries = day_rows[idx]
+                day_label = f"{entries[0]['date']} · W{entries[0]['week_index']} · {entries[0]['day_name']}"
+                row_html: list[str] = []
+                for item in entries:
+                    notes = escape(item["notes"]) if item["notes"] else "-"
+                    eaten_at = escape(item["eaten_at"]) if item["eaten_at"] else "-"
+                    swapped_text = "Yes" if item["swapped"] else "No"
+                    swapped_class = "swap-yes" if item["swapped"] else "swap-no"
+                    row_html.append(
+                        "<tr>"
+                        f"<td>{escape(item['imported'])}</td>"
+                        f"<td>{escape(item['current'])}</td>"
+                        f"<td class='{swapped_class}'>{swapped_text}</td>"
+                        f"<td class='status-{escape(item['status'])}'>{escape(item['status'])}</td>"
+                        f"<td>{notes}</td>"
+                        f"<td>{eaten_at}</td>"
+                        f"<td>{self._render_attachments_cell(item['attachments'])}</td>"
+                        "</tr>"
+                    )
+                body_parts.append(
+                    f"""
+                    <section class="group">
+                      <h3>{escape(day_label)}</h3>
+                      <div class="table-wrap">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Imported slot</th>
+                              <th>Current slot</th>
+                              <th>Changed by swap?</th>
+                              <th>Status</th>
+                              <th>Notes</th>
+                              <th>Eaten at</th>
+                              <th>Images</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {"".join(row_html)}
+                          </tbody>
+                        </table>
+                      </div>
+                    </section>
+                    """
+                )
+
+        generated_at = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
+        meta_line = (
+            f"Mode: 2-week plan cross-check · Meal plan: {selected_plan.name} (#{selected_plan.id}) · "
+            f"Plan range: {start_date.isoformat()} to {end_date.isoformat()}"
+        )
+        totals_html = (
+            "<h2>Summary totals</h2>"
+            f"<p>Total meals in first 14 days: <strong>{sum(totals.values())}</strong> · "
+            f"Slots changed by swap: <strong>{swapped_total}</strong></p>"
+            "<p>"
+            f"Planned: <strong>{totals[MealStatus.planned.value]}</strong> · "
+            f"Eaten: <strong>{totals[MealStatus.eaten.value]}</strong> · "
+            f"Skipped: <strong>{totals[MealStatus.skipped.value]}</strong>"
+            "</p>"
+        )
+        return self._render_html_shell(
+            title="Meal Tracking 2-Week Plan Cross-Check",
+            generated_at=generated_at,
+            meta_line=meta_line,
+            totals_html=totals_html,
+            breakdown_title="Daily tabulated cross-check",
+            breakdown_html="".join(body_parts),
+            auto_print=auto_print,
+        )
+
+    def build_html_report(
+        self,
+        db: Session,
+        user_id: int,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        group_by: str = "daily",
+        mode: str = "timeline",
+        meal_plan_id: int | None = None,
+        auto_print: bool = False,
+    ) -> str:
+        if mode == "biweekly_plan_check":
+            return self._build_biweekly_crosscheck_report_html(
+                db=db,
+                user_id=user_id,
+                meal_plan_id=meal_plan_id,
+                auto_print=auto_print,
+            )
+        if mode != "timeline":
+            raise HTTPException(status_code=400, detail="Unsupported report mode")
+        if group_by not in {"daily", "weekly", "biweekly"}:
+            raise HTTPException(status_code=400, detail="Unsupported grouping mode")
+        start, end = self._resolve_report_date_range(start_date, end_date)
+        return self._build_timeline_report_html(
+            db=db,
+            user_id=user_id,
+            start_date=start,
+            end_date=end,
+            group_by=group_by,
+            meal_plan_id=meal_plan_id,
+            auto_print=auto_print,
+        )
 
     def swap_meal_plans_between_meals(self, db: Session, meal_id_a: int, meal_id_b: int) -> None:
         if meal_id_a == meal_id_b:
@@ -405,7 +760,13 @@ class TrackingService:
         if week_a.meal_plan_id != week_b.meal_plan_id:
             raise HTTPException(status_code=400, detail="Meals must belong to the same meal plan")
 
-        temp = Meal(day_id=meal_a.day_id, meal_type="__swap__", title="__swap__")
+        temp = Meal(
+            day_id=meal_a.day_id,
+            meal_type="__swap__",
+            title="__swap__",
+            original_meal_type="__swap__",
+            original_title="__swap__",
+        )
         db.add(temp)
         db.flush()
 

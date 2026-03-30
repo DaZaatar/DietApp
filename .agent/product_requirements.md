@@ -9,6 +9,7 @@
 - Track planned/eaten/skipped meal state
 - Attach meal images to tracking entries
 - Generate tracking status reports (HTML/print-to-PDF) over selectable date ranges and groupings
+- Reporting must include swap-aware slot comparison (imported slot vs current slot), optional meal images, and a 2-week tabulated cross-check against imported plan
 
 ## Separation of Concerns
 - Imports module handles PDF parsing orchestration only

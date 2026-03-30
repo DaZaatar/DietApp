@@ -10,7 +10,9 @@ from app.modules.tracking.schemas import (
     AttachmentResponse,
     SwapDaysRequest,
     SwapMealsRequest,
+    TrackingMealAttachmentResponse,
     TrackingReportGroupBy,
+    TrackingReportMode,
     TrackingMealItemResponse,
     TrackingEntryResponse,
     TrackingEntryUpdate,
@@ -30,11 +32,21 @@ def list_tracking_meals(
     return service.list_meals(db, user_id=user_id, meal_plan_id=meal_plan_id)
 
 
+@router.get("/meals/{meal_id}/attachments", response_model=list[TrackingMealAttachmentResponse])
+def list_meal_attachments(
+    meal_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    return service.list_meal_attachments(db, user_id=user_id, meal_id=meal_id)
+
+
 @router.get("/reports/html", response_class=HTMLResponse)
 def tracking_report_html(
     start_date: date | None = None,
     end_date: date | None = None,
     group_by: TrackingReportGroupBy = Query(default=TrackingReportGroupBy.daily),
+    mode: TrackingReportMode = Query(default=TrackingReportMode.timeline),
     meal_plan_id: int | None = None,
     auto_print: bool = False,
     user_id: int = Depends(get_current_user_id),
@@ -46,6 +58,7 @@ def tracking_report_html(
         start_date=start_date,
         end_date=end_date,
         group_by=group_by.value,
+        mode=mode.value,
         meal_plan_id=meal_plan_id,
         auto_print=auto_print,
     )

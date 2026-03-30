@@ -205,6 +205,24 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertGreaterEqual(len(items), 1)
         self.assertIn("day_id", items[0])
 
+    def test_tracking_meal_attachments_endpoint_returns_images(self):
+        self.commit_sample_plan()
+        items = self.client.get("/api/v1/tracking/meals").json()
+        self.assertGreaterEqual(len(items), 1)
+        meal_id = items[0]["meal_id"]
+        attach = self.client.post(
+            f"/api/v1/tracking/meals/{meal_id}/attachments",
+            files={"file": ("meal.png", b"fake-png-bytes", "image/png")},
+            data={"note": "after meal"},
+        )
+        self.assertEqual(attach.status_code, 200)
+
+        listed = self.client.get(f"/api/v1/tracking/meals/{meal_id}/attachments")
+        self.assertEqual(listed.status_code, 200)
+        payload = listed.json()
+        self.assertGreaterEqual(len(payload), 1)
+        self.assertIn("data:image/png;base64", payload[0]["data_uri"])
+
     def test_tracking_html_report_filters_by_range_and_grouping(self):
         self.commit_sample_plan()
         response = self.client.get(
@@ -217,6 +235,46 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertIn("Grouping: Weekly", body)
         self.assertIn("Summary totals", body)
         self.assertIn("Oats", body)
+        self.assertIn("Imported slot", body)
+        self.assertIn("Current slot", body)
+
+    def test_tracking_html_report_marks_swapped_slots(self):
+        self.commit_sample_plan()
+        items = self.client.get("/api/v1/tracking/meals").json()
+        self.assertGreaterEqual(len(items), 2)
+        meal_a = items[0]["meal_id"]
+        meal_b = items[1]["meal_id"]
+        swap = self.client.post("/api/v1/tracking/swap/meals", json={"meal_id_a": meal_a, "meal_id_b": meal_b})
+        self.assertEqual(swap.status_code, 200)
+
+        response = self.client.get("/api/v1/tracking/reports/html?start_date=2020-01-01&end_date=2030-01-01")
+        self.assertEqual(response.status_code, 200)
+        body = response.text
+        self.assertIn("Swapped slots", body)
+        self.assertIn("Yes", body)
+
+    def test_tracking_html_report_includes_uploaded_images(self):
+        self.commit_sample_plan()
+        items = self.client.get("/api/v1/tracking/meals").json()
+        meal_id = items[0]["meal_id"]
+        attach = self.client.post(
+            f"/api/v1/tracking/meals/{meal_id}/attachments",
+            files={"file": ("meal.png", b"fake-png-bytes", "image/png")},
+        )
+        self.assertEqual(attach.status_code, 200)
+
+        response = self.client.get("/api/v1/tracking/reports/html?start_date=2020-01-01&end_date=2030-01-01")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("data:image/png;base64", response.text)
+
+    def test_tracking_html_report_biweekly_crosscheck_mode(self):
+        meal_plan_id = self.commit_sample_plan()
+        response = self.client.get(f"/api/v1/tracking/reports/html?mode=biweekly_plan_check&meal_plan_id={meal_plan_id}")
+        self.assertEqual(response.status_code, 200)
+        body = response.text
+        self.assertIn("2-week plan cross-check", body)
+        self.assertIn("Daily tabulated cross-check", body)
+        self.assertIn("Changed by swap?", body)
 
     def test_swap_meals_exchanges_planned_content(self):
         self.commit_sample_plan()
