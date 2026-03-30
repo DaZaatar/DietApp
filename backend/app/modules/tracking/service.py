@@ -9,13 +9,23 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.modules.meal_plans.service import get_or_create_tracking_entry
 from app.modules.models import Day, Meal, MealAttachment, MealIngredient, MealPlan, MealStatus, MealTrackingEntry, Week
-from app.modules.tracking.schemas import TrackingEntryUpdate
+from app.modules.tracking.schemas import TrackingDayStatus, TrackingEntryUpdate
 from app.modules.tracking.storage import LocalMediaStorage
 
 
 class TrackingService:
     def __init__(self) -> None:
         self.storage = LocalMediaStorage(settings.media_local_root)
+
+    def _resolve_day_status(self, plan_starts_on: date | None, plan_created_at: datetime, day_index: int, statuses: list[str]) -> str:
+        if statuses and all(status != MealStatus.planned.value for status in statuses):
+            return TrackingDayStatus.completed.value
+        today = datetime.now(UTC).date()
+        base_date = plan_starts_on or plan_created_at.date()
+        day_date = base_date + timedelta(days=day_index)
+        if day_date < today:
+            return TrackingDayStatus.ended.value
+        return TrackingDayStatus.active.value
 
     def update_status(self, db: Session, user_id: int, meal_id: int, payload: TrackingEntryUpdate):
         entry = get_or_create_tracking_entry(db, user_id=user_id, meal_id=meal_id)
@@ -83,6 +93,7 @@ class TrackingService:
                 Day.day_name.label("day_name"),
                 Day.day_index.label("day_index"),
                 MealPlan.starts_on.label("plan_starts_on"),
+                MealPlan.created_at.label("plan_created_at"),
                 Meal.meal_type.label("meal_type"),
                 Meal.title.label("title"),
                 MealTrackingEntry.status.label("status"),
@@ -119,6 +130,16 @@ class TrackingService:
                     }
                 )
 
+        statuses_by_day: dict[int, list[str]] = {}
+        for row in rows:
+            if isinstance(row.status, MealStatus):
+                status = row.status.value
+            elif isinstance(row.status, str) and row.status in {s.value for s in MealStatus}:
+                status = row.status
+            else:
+                status = MealStatus.planned.value
+            statuses_by_day.setdefault(row.day_id, []).append(status)
+
         return [
             {
                 "meal_id": row.meal_id,
@@ -127,6 +148,12 @@ class TrackingService:
                 "week_index": row.week_index,
                 "day_name": row.day_name,
                 "day_index": row.day_index if row.day_index is not None else 0,
+                "day_status": self._resolve_day_status(
+                    plan_starts_on=row.plan_starts_on,
+                    plan_created_at=row.plan_created_at,
+                    day_index=row.day_index if row.day_index is not None else 0,
+                    statuses=statuses_by_day.get(row.day_id, []),
+                ),
                 "plan_starts_on": row.plan_starts_on,
                 "meal_type": row.meal_type,
                 "title": row.title,

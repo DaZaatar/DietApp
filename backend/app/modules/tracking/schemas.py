@@ -72,6 +72,12 @@ class TrackingReportMode(str, Enum):
     biweekly_plan_check = "biweekly_plan_check"
 
 
+class TrackingDayStatus(str, Enum):
+    active = "active"
+    completed = "completed"
+    ended = "ended"
+
+
 class TrackingMealItemResponse(BaseModel):
     meal_id: int
     day_id: int
@@ -79,6 +85,7 @@ class TrackingMealItemResponse(BaseModel):
     week_index: int
     day_name: str
     day_index: int = 0
+    day_status: TrackingDayStatus = TrackingDayStatus.active
     plan_starts_on: date | None = None
     meal_type: str
     title: str
