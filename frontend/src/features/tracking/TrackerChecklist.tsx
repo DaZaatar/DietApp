@@ -133,6 +133,7 @@ export function TrackerChecklist() {
   const [attachmentViewerMeal, setAttachmentViewerMeal] = useState<Item | null>(null);
   const [attachmentViewerLoading, setAttachmentViewerLoading] = useState(false);
   const [attachmentViewerItems, setAttachmentViewerItems] = useState<MealAttachment[]>([]);
+  const [expandedAttachment, setExpandedAttachment] = useState<MealAttachment | null>(null);
 
   const dayGroups = useMemo(() => buildDayGroups(items), [items]);
 
@@ -273,6 +274,7 @@ export function TrackerChecklist() {
     setAttachmentViewerMeal(item);
     setAttachmentViewerLoading(true);
     setAttachmentViewerItems([]);
+    setExpandedAttachment(null);
     setError(null);
     try {
       const attachments = await getJson<MealAttachment[]>(`/tracking/meals/${item.mealId}/attachments`);
@@ -549,12 +551,19 @@ export function TrackerChecklist() {
               <ul className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {attachmentViewerItems.map((img) => (
                   <li key={img.id} className="rounded-lg border border-slate-200 p-2 dark:border-slate-700">
-                    <img
-                      src={img.data_uri}
-                      alt={img.original_filename}
-                      className="h-40 w-full rounded-md object-cover"
-                      loading="lazy"
-                    />
+                    <button
+                      type="button"
+                      className="block w-full"
+                      onClick={() => setExpandedAttachment(img)}
+                      title="Tap to expand image"
+                    >
+                      <img
+                        src={img.data_uri}
+                        alt={img.original_filename}
+                        className="h-40 w-full rounded-md object-cover"
+                        loading="lazy"
+                      />
+                    </button>
                     <p className="mt-1 truncate text-xs text-slate-600 dark:text-slate-400">{img.original_filename}</p>
                     {img.note ? <p className="text-xs text-slate-500 dark:text-slate-500">{img.note}</p> : null}
                   </li>
@@ -565,11 +574,46 @@ export function TrackerChecklist() {
               <button
                 type="button"
                 className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-800 dark:border-slate-600 dark:text-slate-200"
-                onClick={() => setAttachmentViewerMeal(null)}
+                onClick={() => {
+                  setAttachmentViewerMeal(null);
+                  setExpandedAttachment(null);
+                }}
               >
                 Close
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {expandedAttachment && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-3 sm:p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Expanded meal image"
+          onClick={() => setExpandedAttachment(null)}
+        >
+          <div
+            className="relative w-full max-w-4xl rounded-xl bg-white p-3 dark:bg-slate-900"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="absolute right-3 top-3 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+              onClick={() => setExpandedAttachment(null)}
+            >
+              Close
+            </button>
+            <img
+              src={expandedAttachment.data_uri}
+              alt={expandedAttachment.original_filename}
+              className="max-h-[80vh] w-full rounded-md object-contain"
+            />
+            <p className="mt-2 text-xs text-slate-600 dark:text-slate-400">{expandedAttachment.original_filename}</p>
+            {expandedAttachment.note ? (
+              <p className="text-xs text-slate-500 dark:text-slate-500">{expandedAttachment.note}</p>
+            ) : null}
           </div>
         </div>
       )}
