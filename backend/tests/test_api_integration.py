@@ -204,6 +204,35 @@ class ApiIntegrationTests(unittest.TestCase):
         items = self.client.get("/api/v1/tracking/meals").json()
         self.assertGreaterEqual(len(items), 1)
         self.assertIn("day_id", items[0])
+        self.assertIn("day_status", items[0])
+
+    def test_tracking_day_status_completed_when_all_meals_not_planned(self):
+        self.commit_sample_plan()
+        items = self.client.get("/api/v1/tracking/meals").json()
+        self.assertGreaterEqual(len(items), 2)
+        first_day_id = items[0]["day_id"]
+        same_day_meals = [item for item in items if item["day_id"] == first_day_id]
+        self.assertGreaterEqual(len(same_day_meals), 1)
+        for meal in same_day_meals:
+            r = self.client.patch(
+                f"/api/v1/tracking/meals/{meal['meal_id']}",
+                json={"status": "eaten"},
+            )
+            self.assertEqual(r.status_code, 200)
+        refreshed = self.client.get("/api/v1/tracking/meals").json()
+        refreshed_day = [item for item in refreshed if item["day_id"] == first_day_id]
+        self.assertGreaterEqual(len(refreshed_day), 1)
+        self.assertTrue(all(item["day_status"] == "completed" for item in refreshed_day))
+
+    def test_tracking_day_status_ended_for_past_day(self):
+        payload = sample_preview_payload()
+        payload["starts_on"] = "2000-01-01"
+        commit = self.client.post("/api/v1/imports/commit", json=payload)
+        self.assertEqual(commit.status_code, 200)
+        items = self.client.get("/api/v1/tracking/meals").json()
+        self.assertGreaterEqual(len(items), 1)
+        # At least one day should be ended because the plan is far in the past.
+        self.assertTrue(any(item["day_status"] == "ended" for item in items))
 
     def test_tracking_meal_attachments_endpoint_returns_images(self):
         self.commit_sample_plan()

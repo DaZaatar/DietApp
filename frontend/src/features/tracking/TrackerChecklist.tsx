@@ -17,6 +17,7 @@ type Item = {
   weekIndex: number;
   dayName: string;
   dayIndex: number;
+  dayStatus: "active" | "completed" | "ended";
   planStartsOn: string | null;
   mealType: string;
   title: string;
@@ -88,6 +89,16 @@ function buildDayGroups(items: Item[]): DayGroup[] {
   });
 }
 
+function dayStatusBadgeClass(status: "active" | "completed" | "ended"): string {
+  if (status === "completed") {
+    return "bg-emerald-100 text-emerald-900 ring-1 ring-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-100 dark:ring-emerald-800";
+  }
+  if (status === "ended") {
+    return "bg-amber-100 text-amber-900 ring-1 ring-amber-200 dark:bg-amber-900/40 dark:text-amber-100 dark:ring-amber-800";
+  }
+  return "bg-slate-100 text-slate-700 ring-1 ring-slate-200 dark:bg-slate-700 dark:text-slate-200 dark:ring-slate-600";
+}
+
 function calendarLabel(planStartsOn: string | null, dayIndex: number): string | null {
   if (!planStartsOn) return null;
   const base = new Date(`${planStartsOn}T12:00:00`);
@@ -133,8 +144,21 @@ export function TrackerChecklist() {
   const [attachmentViewerMeal, setAttachmentViewerMeal] = useState<Item | null>(null);
   const [attachmentViewerLoading, setAttachmentViewerLoading] = useState(false);
   const [attachmentViewerItems, setAttachmentViewerItems] = useState<MealAttachment[]>([]);
+  const [expandedAttachment, setExpandedAttachment] = useState<MealAttachment | null>(null);
 
   const dayGroups = useMemo(() => buildDayGroups(items), [items]);
+  const orderedDayGroups = useMemo(
+    () =>
+      [...dayGroups].sort((a, b) => {
+        const rank = (s: "active" | "completed" | "ended") => (s === "active" ? 0 : s === "ended" ? 1 : 2);
+        const sa = rank(a.meals[0]?.dayStatus ?? "active");
+        const sb = rank(b.meals[0]?.dayStatus ?? "active");
+        if (sa !== sb) return sa - sb;
+        if (a.weekIndex !== b.weekIndex) return a.weekIndex - b.weekIndex;
+        return a.dayIndex - b.dayIndex;
+      }),
+    [dayGroups],
+  );
 
   const loadMeals = useCallback(async () => {
     setLoading(true);
@@ -147,6 +171,7 @@ export function TrackerChecklist() {
           week_index: number;
           day_name: string;
           day_index: number;
+          day_status: "active" | "completed" | "ended";
           plan_starts_on: string | null;
           meal_type: string;
           title: string;
@@ -162,6 +187,7 @@ export function TrackerChecklist() {
           weekIndex: item.week_index,
           dayName: item.day_name,
           dayIndex: item.day_index ?? 0,
+          dayStatus: item.day_status ?? "active",
           planStartsOn: item.plan_starts_on ?? null,
           mealType: item.meal_type,
           title: item.title,
@@ -244,7 +270,7 @@ export function TrackerChecklist() {
     setError(null);
     try {
       await patchJson(`/tracking/meals/${mealId}`, { status });
-      setItems((prev) => prev.map((item) => (item.mealId === mealId ? { ...item, status } : item)));
+      await loadMeals();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Status update failed");
     } finally {
@@ -273,6 +299,7 @@ export function TrackerChecklist() {
     setAttachmentViewerMeal(item);
     setAttachmentViewerLoading(true);
     setAttachmentViewerItems([]);
+    setExpandedAttachment(null);
     setError(null);
     try {
       const attachments = await getJson<MealAttachment[]>(`/tracking/meals/${item.mealId}/attachments`);
@@ -305,9 +332,10 @@ export function TrackerChecklist() {
         <p className="rounded-lg bg-slate-100 p-3 text-sm text-slate-700 dark:bg-slate-800 dark:text-slate-300">{message}</p>
       )}
       <ul className="space-y-4">
-        {dayGroups.map((group) => {
+        {orderedDayGroups.map((group) => {
           const dateLine = calendarLabel(group.planStartsOn, group.dayIndex);
           const canDaySwap = dayGroups.length > 1;
+          const dayStatus = group.meals[0]?.dayStatus ?? "active";
           return (
             <li
               key={group.key}
@@ -317,6 +345,13 @@ export function TrackerChecklist() {
                 <div>
                   <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                     Week {group.weekIndex} · {group.dayName}
+                  </p>
+                  <p className="mt-1">
+                    <span
+                      className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize tracking-wide ${dayStatusBadgeClass(dayStatus)}`}
+                    >
+                      {dayStatus}
+                    </span>
                   </p>
                   {dateLine && <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-400">{dateLine}</p>}
                 </div>
@@ -549,12 +584,19 @@ export function TrackerChecklist() {
               <ul className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {attachmentViewerItems.map((img) => (
                   <li key={img.id} className="rounded-lg border border-slate-200 p-2 dark:border-slate-700">
-                    <img
-                      src={img.data_uri}
-                      alt={img.original_filename}
-                      className="h-40 w-full rounded-md object-cover"
-                      loading="lazy"
-                    />
+                    <button
+                      type="button"
+                      className="block w-full"
+                      onClick={() => setExpandedAttachment(img)}
+                      title="Tap to expand image"
+                    >
+                      <img
+                        src={img.data_uri}
+                        alt={img.original_filename}
+                        className="h-40 w-full rounded-md object-cover"
+                        loading="lazy"
+                      />
+                    </button>
                     <p className="mt-1 truncate text-xs text-slate-600 dark:text-slate-400">{img.original_filename}</p>
                     {img.note ? <p className="text-xs text-slate-500 dark:text-slate-500">{img.note}</p> : null}
                   </li>
@@ -565,11 +607,46 @@ export function TrackerChecklist() {
               <button
                 type="button"
                 className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-800 dark:border-slate-600 dark:text-slate-200"
-                onClick={() => setAttachmentViewerMeal(null)}
+                onClick={() => {
+                  setAttachmentViewerMeal(null);
+                  setExpandedAttachment(null);
+                }}
               >
                 Close
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {expandedAttachment && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-3 sm:p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Expanded meal image"
+          onClick={() => setExpandedAttachment(null)}
+        >
+          <div
+            className="relative w-full max-w-4xl rounded-xl bg-white p-3 dark:bg-slate-900"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="absolute right-3 top-3 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+              onClick={() => setExpandedAttachment(null)}
+            >
+              Close
+            </button>
+            <img
+              src={expandedAttachment.data_uri}
+              alt={expandedAttachment.original_filename}
+              className="max-h-[80vh] w-full rounded-md object-contain"
+            />
+            <p className="mt-2 text-xs text-slate-600 dark:text-slate-400">{expandedAttachment.original_filename}</p>
+            {expandedAttachment.note ? (
+              <p className="text-xs text-slate-500 dark:text-slate-500">{expandedAttachment.note}</p>
+            ) : null}
           </div>
         </div>
       )}
