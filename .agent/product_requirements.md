@@ -8,6 +8,7 @@
 - Generate shopping list from imported meals (initial placeholder)
 - Track planned/eaten/skipped meal state
 - Attach meal images to tracking entries
+- Generate tracking status reports (HTML/print-to-PDF) over selectable date ranges and groupings
 
 ## Separation of Concerns
 - Imports module handles PDF parsing orchestration only

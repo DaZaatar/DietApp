@@ -7,6 +7,7 @@ import { AuthLayout } from "./AuthLayout";
 import { ImportPage } from "../pages/ImportPage";
 import { LoginPage } from "../pages/LoginPage";
 import { RegisterPage } from "../pages/RegisterPage";
+import { ReportsPage } from "../pages/ReportsPage";
 import { ShoppingPage } from "../pages/ShoppingPage";
 import { TrackingPage } from "../pages/TrackingPage";
 
@@ -89,6 +90,9 @@ function MainLayout() {
       </NavLink>
       <NavLink to="/shopping" className={navLinkClass} onClick={() => setMobileNavOpen(false)}>
         Shopping
+      </NavLink>
+      <NavLink to="/reports" className={navLinkClass} onClick={() => setMobileNavOpen(false)}>
+        Reports
       </NavLink>
     </>
   );
@@ -180,6 +184,7 @@ export function App() {
         <Route path="/tracking" element={<Navigate to="/" replace />} />
         <Route path="/import" element={<ImportPage />} />
         <Route path="/shopping" element={<ShoppingPage />} />
+        <Route path="/reports" element={<ReportsPage />} />
       </Route>
     </Routes>
   );

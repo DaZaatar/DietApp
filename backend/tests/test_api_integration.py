@@ -205,6 +205,19 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertGreaterEqual(len(items), 1)
         self.assertIn("day_id", items[0])
 
+    def test_tracking_html_report_filters_by_range_and_grouping(self):
+        self.commit_sample_plan()
+        response = self.client.get(
+            "/api/v1/tracking/reports/html?start_date=2020-01-01&end_date=2030-01-01&group_by=weekly"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/html", response.headers.get("content-type", ""))
+        body = response.text
+        self.assertIn("Meal Tracking Report", body)
+        self.assertIn("Grouping: Weekly", body)
+        self.assertIn("Summary totals", body)
+        self.assertIn("Oats", body)
+
     def test_swap_meals_exchanges_planned_content(self):
         self.commit_sample_plan()
         items = self.client.get("/api/v1/tracking/meals").json()

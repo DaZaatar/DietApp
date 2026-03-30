@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from enum import Enum
 
 from pydantic import BaseModel, ConfigDict
 
@@ -49,6 +50,12 @@ class SwapMealsRequest(BaseModel):
 class SwapDaysRequest(BaseModel):
     day_id_a: int
     day_id_b: int
+
+
+class TrackingReportGroupBy(str, Enum):
+    daily = "daily"
+    weekly = "weekly"
+    biweekly = "biweekly"
 
 
 class TrackingMealItemResponse(BaseModel):

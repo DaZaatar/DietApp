@@ -26,6 +26,7 @@ Feature-first folders under `frontend/src/features` with shared app shell, `page
 ## Data Ownership
 - imports: parsing lifecycle and import logs
 - tracking: meal completion + attachment metadata
+- tracking reports: HTML report generation over selectable date ranges with daily/weekly/bi-weekly grouping
 - ai: OpenRouter integration only
 - meal_plans: list + delete meal plans (cascades shopping/tracking data; attachment files deleted from disk)
 - shopping: user-scoped checklist state and meal-plan-scoped aggregated ingredient view
